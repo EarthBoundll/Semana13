@@ -1,0 +1,13 @@
+{
+  "name": "GymPlan — tu plan de gimnasio",
+  "short_name": "GymPlan",
+  "description": "Planifica tus días de gym, tu rutina inteligente y tu peso mes a mes.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0d0d0d",
+  "theme_color": "#2a78d6",
+  "lang": "es",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
