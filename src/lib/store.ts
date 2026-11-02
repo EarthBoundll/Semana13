@@ -12,10 +12,14 @@ export const defaultProfile: Profile = {
   goal: 'hipertrofia',
   level: 'intermedio',
   equipment: [...EQUIPMENT_ORDER],
-  sessionMinutes: 60,
-  gymStart: null,
-  gymEnd: null,
-  daysPerWeek: 4,
+  sessionMinutes: 70,
+  gymStart: '06:00',
+  gymEnd: '07:10',
+  daysPerWeek: 2,
+  weekDays: null,
+  exercisesPerDay: 4,
+  cardioId: 'caminadora',
+  cardioMin: 15,
   setsPref: null,
   style: 'auto',
   theme: 'system',
@@ -34,6 +38,9 @@ export function initialState(): AppState {
     customExercises: [],
     favorites: [],
     disliked: [],
+    videos: {},
+    autoWeeks: [],
+    dismissed: [],
   };
 }
 
@@ -56,6 +63,9 @@ export function normalize(raw: unknown): AppState {
     customExercises: arr(x.customExercises),
     favorites: arr(x.favorites),
     disliked: arr(x.disliked),
+    videos: x.videos && typeof x.videos === 'object' ? (x.videos as Record<string, string>) : {},
+    autoWeeks: arr(x.autoWeeks),
+    dismissed: arr(x.dismissed),
   };
 }
 

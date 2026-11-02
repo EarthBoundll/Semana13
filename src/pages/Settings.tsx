@@ -1,8 +1,11 @@
-import { useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { Chip, PageHeader, Segmented, toast } from '../components/ui';
-import { EQUIPMENT, EQUIPMENT_ORDER, GOALS, LEVELS } from '../data/meta';
-import { todayKey } from '../lib/dates';
+import { CARDIO } from '../data/exercises';
+import { EQUIPMENT, EQUIPMENT_ORDER, GOALS, LEVELS, STYLES } from '../data/meta';
+import { applyCardioToRoutine, regenerate } from '../lib/actions';
+import { DOW_LONG, DOW_SHORT, todayKey, weekStart } from '../lib/dates';
+import { applyHabitualWeek, habitualDays } from '../lib/plan';
 import { applyTheme, buildExMap, getState, initialState, mutate, normalize, setState, useAppState } from '../lib/store';
 import { fitRoutineDay, fmtHHMM, paceFactor, parseHHMM, planningBudget, scheduleMinutes } from '../lib/timing';
 import type { Goal, Level, Profile, Theme } from '../types';
@@ -41,6 +44,13 @@ export function Settings() {
   };
 
   const sched = scheduleMinutes(p);
+  const [persisted, setPersisted] = useState<boolean | null>(null);
+  useEffect(() => {
+    navigator.storage
+      ?.persisted?.()
+      .then(setPersisted)
+      .catch(() => setPersisted(false));
+  }, []);
   const pace = paceFactor(s.logs, buildExMap(s.customExercises));
 
   const fitAll = () => {
@@ -60,9 +70,101 @@ export function Settings() {
     toast(changed ? `Ajusté ${changed} día${changed > 1 ? 's' : ''} para que quepan en ${budget} min` : `Tu rutina ya cabe en ${budget} min`);
   };
 
+  const days = habitualDays(p);
+  const cardioOptions = [...CARDIO, ...s.customExercises.filter((e) => e.unit === 'min')];
+
+  const toggleDay = (i: number) => {
+    const next = days.includes(i) ? days.filter((d) => d !== i) : [...days, i].sort((a, b) => a - b);
+    if (!next.length) return;
+    mutate((st) => {
+      st.profile.weekDays = next;
+      st.profile.daysPerWeek = next.length;
+      applyHabitualWeek(st, weekStart(todayKey()));
+    });
+  };
+
   return (
     <div className="page">
-      <PageHeader title="Ajustes" subtitle="Tu perfil y tus datos" />
+      <PageHeader title="Ajustes" subtitle="Tu plan, tu horario y tus datos" />
+
+      <section className="card form-card">
+        <h3 className="card-title">
+          <Icon name="calendar" size={18} /> Mi plan
+        </h3>
+        <div className="field">
+          <span>Días que voy al gym</span>
+          <div className="chips weekday-chips">
+            {DOW_SHORT.map((d, i) => (
+              <Chip key={d} on={days.includes(i)} onClick={() => toggleDay(i)}>
+                {d}
+              </Chip>
+            ))}
+          </div>
+          <small className="muted">
+            {days.map((i) => DOW_LONG[i]).join(', ')}. Cada semana se planifica sola con estos días (esta semana ya se actualizó). Puedes cambiar cualquier día en “Semana”.
+          </small>
+        </div>
+        <div className="field">
+          <span>Ejercicios por día (sin contar el cardio)</span>
+          <Segmented
+            label="Ejercicios por día"
+            value={p.exercisesPerDay ?? 0}
+            onChange={(v) => set('exercisesPerDay', v || null)}
+            options={[0, 3, 4, 5, 6, 7].map((n) => ({ value: n, label: n ? String(n) : 'Auto' }))}
+          />
+        </div>
+        <div className="field-stack">
+          <label className="field">
+            <span>Cardio al final</span>
+            <select
+              value={p.cardioId ?? ''}
+              onChange={(e) => {
+                const v = e.target.value || null;
+                mutate((st) => {
+                  st.profile.cardioId = v;
+                  if (v && !st.profile.cardioMin) st.profile.cardioMin = 15;
+                });
+                applyCardioToRoutine();
+              }}
+            >
+              <option value="">Sin cardio</option>
+              {cardioOptions.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {p.cardioId && (
+            <div className="field">
+              <span>Minutos</span>
+              <Segmented
+                label="Minutos de cardio"
+                value={p.cardioMin}
+                onChange={(v) => {
+                  set('cardioMin', v);
+                  applyCardioToRoutine();
+                }}
+                options={[10, 15, 20, 30].map((n) => ({ value: n, label: String(n) }))}
+              />
+            </div>
+          )}
+        </div>
+        <p className="muted small">
+          Tu rutina tiene {s.routine.length} día{s.routine.length === 1 ? '' : 's'} ({STYLES[p.style].label.toLowerCase()}) y vas {days.length} día{days.length === 1 ? '' : 's'} por semana
+          {s.routine.length !== days.length ? ': se van turnando en orden.' : '.'}
+        </p>
+        <button
+          className="btn primary"
+          onClick={() => {
+            if (!window.confirm(`¿Rehacer tu rutina para ${days.length} días con ${p.exercisesPerDay ?? 'los'} ejercicios? Se conservan tu día propio y los días que marcaste para mantener.`)) return;
+            const style = regenerate({ daysPerWeek: days.length });
+            toast(`Rutina rehecha: ${STYLES[style].label}`);
+          }}
+        >
+          <Icon name="spark" size={18} /> Rehacer mi rutina con estos ajustes
+        </button>
+      </section>
 
       <section className="card form-card">
         <h3 className="card-title">
@@ -165,10 +267,6 @@ export function Settings() {
             ))}
           </select>
         </label>
-        <div className="field">
-          <span>Días por semana (habitual)</span>
-          <Segmented label="Días por semana" value={p.daysPerWeek} onChange={(v) => set('daysPerWeek', v)} options={[1, 2, 3, 4, 5, 6].map((n) => ({ value: n, label: String(n) }))} />
-        </div>
         {sched == null && (
           <div className="field">
             <span>Duración de cada sesión</span>
@@ -212,8 +310,16 @@ export function Settings() {
       <section className="card form-card">
         <h3 className="card-title">Tus datos</h3>
         <p className="muted small">
-          Todo se guarda en este dispositivo y navegador ({s.logs.length} entrenamientos, {s.weights.length} registros de peso). Descarga un respaldo de vez en cuando o para pasarlo a otro
-          celular.
+          No hay cuentas ni contraseñas: la app es solo tuya y todo se guarda en este celular ({s.logs.length} entrenamientos, {s.weights.length} registros de peso). Si cambias de
+          celular, descarga un respaldo y restáuralo en el nuevo.
+        </p>
+        <p className={`pace-line ${persisted ? 'ok' : 'tight'}`}>
+          <Icon name={persisted ? 'lock' : 'info'} size={16} />
+          <span>
+            {persisted
+              ? 'Almacenamiento protegido: el navegador no borrará tus datos.'
+              : 'Para que el celular nunca borre tus datos, instala la app (Agregar a pantalla de inicio) y ábrela desde ahí.'}
+          </span>
         </p>
         <div className="btn-row wrap">
           <button className="btn secondary" onClick={exportData}>
@@ -245,6 +351,9 @@ export function Settings() {
           <Icon name="trash" size={18} /> Borrar todo y empezar de cero
         </button>
       </section>
+      <p className="muted small center">
+        Fotos de los ejercicios: <a href="https://github.com/yuhonas/free-exercise-db" target="_blank" rel="noopener noreferrer">Free Exercise DB</a> (dominio público).
+      </p>
     </div>
   );
 }

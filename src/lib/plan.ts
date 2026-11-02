@@ -1,11 +1,11 @@
 import { MUSCLES } from '../data/meta';
-import type { AppState, Muscle, RoutineDay } from '../types';
+import type { AppState, Muscle, Profile, RoutineDay } from '../types';
 import { addDays, DOW_LONG, dowIndex, todayKey, weekDays, weekStart } from './dates';
 import { mainMuscles } from './generator';
 import type { ExMap } from './store';
 
 /** Patrones de días sugeridos (0 = lunes) para que haya descanso entre sesiones */
-const PATTERNS: Record<number, number[]> = {
+export const PATTERNS: Record<number, number[]> = {
   1: [2],
   2: [0, 3],
   3: [0, 2, 4],
@@ -149,4 +149,38 @@ export function dayById(s: AppState, id: string | undefined): RoutineDay | undef
 export function dayLetter(s: AppState, id: string): string {
   const i = s.routine.findIndex((d) => d.id === id);
   return i >= 0 ? String.fromCharCode(65 + i) : '?';
+}
+
+// ─────────────────────────── Semana habitual ───────────────────────────
+
+/** Días de la semana a los que sueles ir (0 = lunes) */
+export function habitualDays(p: Profile): number[] {
+  if (p.weekDays && p.weekDays.length) return [...p.weekDays].sort((a, b) => a - b);
+  return PATTERNS[Math.min(7, Math.max(1, p.daysPerWeek))] ?? [0, 3];
+}
+
+/** Planifica una semana con tus días habituales (desde hoy en adelante) */
+export function applyHabitualWeek(s: AppState, start: string) {
+  const today = todayKey();
+  const days = weekDays(start);
+  const dates = habitualDays(s.profile)
+    .map((i) => days[i])
+    .filter((d) => d >= today && !s.logs.some((l) => l.date === d));
+  applyWeekPlan(s, start, dates);
+  if (!s.autoWeeks.includes(start)) s.autoWeeks.push(start);
+}
+
+/** ¿Hay que planificar sola la semana actual? (solo una vez por semana y si está vacía) */
+export function needsAutoPlan(s: AppState): boolean {
+  const start = weekStart(todayKey());
+  if (s.autoWeeks.includes(start) || !s.routine.length) return false;
+  return true;
+}
+
+export function autoPlanCurrentWeek(s: AppState) {
+  const start = weekStart(todayKey());
+  if (s.autoWeeks.includes(start)) return;
+  const hasPlan = weekDays(start).some((d) => s.plan[d]);
+  if (hasPlan) s.autoWeeks.push(start);
+  else applyHabitualWeek(s, start);
 }

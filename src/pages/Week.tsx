@@ -5,7 +5,7 @@ import { PageHeader, Segmented, Sheet, toast } from '../components/ui';
 import { addDays, DOW_SHORT, fmtDate, fmtDayMonth, fmtWeekRange, fromKey, todayKey, weekDays, weekStart } from '../lib/dates';
 import { estimateMinutes } from '../lib/generator';
 import { paceFactor } from '../lib/timing';
-import { applyWeekPlan, dayById, nextDayIdFor, suggestWeekDates, weekStats, weekWarnings } from '../lib/plan';
+import { applyHabitualWeek, applyWeekPlan, dayById, habitualDays, nextDayIdFor, suggestWeekDates, weekStats, weekWarnings } from '../lib/plan';
 import { mutate, useAppState, useExMap } from '../lib/store';
 import { startWorkout } from '../lib/workout';
 import { useNav } from '../nav';
@@ -52,7 +52,7 @@ export function Week() {
 
   return (
     <div className="page">
-      <PageHeader title="Mi semana" subtitle="Elige qué días vas al gym y qué entrenas cada día" />
+      <PageHeader title="Mi semana" subtitle="Se planifica sola con tus días habituales; cambia lo que quieras" />
 
       <div className="week-nav card">
         <button className="icon-btn" onClick={() => setStart(addDays(start, -7))} aria-label="Semana anterior">
@@ -78,8 +78,18 @@ export function Week() {
 
       {!isPast && (
         <div className="btn-row wrap">
-          <button className="btn primary" onClick={() => setSuggestOpen(true)} disabled={!s.routine.length}>
-            <Icon name="spark" size={18} /> Planificar automático
+          <button
+            className="btn primary"
+            disabled={!s.routine.length}
+            onClick={() => {
+              mutate((st) => applyHabitualWeek(st, start));
+              toast(`Planificado: ${habitualDays(s.profile).map((i) => DOW_SHORT[i]).join(', ')}`);
+            }}
+          >
+            <Icon name="calendar" size={18} /> Mis días habituales ({habitualDays(s.profile).map((i) => DOW_SHORT[i]).join(', ')})
+          </button>
+          <button className="btn secondary" onClick={() => setSuggestOpen(true)} disabled={!s.routine.length}>
+            <Icon name="spark" size={18} /> Otra cantidad de días
           </button>
           <button className="btn secondary" onClick={copyPrev}>
             <Icon name="copy" size={18} /> Repetir semana pasada

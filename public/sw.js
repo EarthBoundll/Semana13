@@ -1,5 +1,5 @@
 // Service worker sencillo: la app funciona sin internet en el gym.
-const CACHE = 'gymplan-v1';
+const CACHE = 'gymplan-v2';
 
 self.addEventListener('install', (event) => {
   event.waitUntil(caches.open(CACHE).then((c) => c.addAll(['/', '/icon.svg', '/manifest.webmanifest'])));

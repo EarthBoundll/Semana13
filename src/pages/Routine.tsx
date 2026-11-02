@@ -2,13 +2,14 @@ import { useEffect, useMemo, useState } from 'react';
 import { VolumeBars } from '../components/charts';
 import { ExerciseDetail, ExercisePicker, exMeta } from '../components/exercise';
 import { Icon } from '../components/Icon';
+import { Thumb } from '../components/media';
 import { Chip, Empty, PageHeader, Segmented, Sheet, Stepper, toast } from '../components/ui';
 import { fmtRest, MUSCLE_ORDER, MUSCLES, REST_OPTIONS, STYLES } from '../data/meta';
 import { routineInsights, statusOf, targets, weeklyVolume } from '../lib/analysis';
-import { todayKey } from '../lib/dates';
 import { bestForMuscle, dayNameFromFocus, detectStyle, estimateMinutes, exerciseMinutes, fillDay, generateRoutine, mainMuscles, scheme, suggestionsForDay, totalSets } from '../lib/generator';
 import { fitRoutineDay, fmtHHMM, paceFactor, parseHHMM, planningBudget, scheduleMinutes } from '../lib/timing';
-import { assignRotation } from '../lib/plan';
+import { remapFuturePlan } from '../lib/actions';
+import { peekPendingDay, setPendingDay } from '../nav';
 import { getState, mutate, uid, useAppState, useExMap } from '../lib/store';
 import type { Muscle, RoutineDay, RoutineExercise, SplitStyle } from '../types';
 
@@ -28,20 +29,14 @@ function updateDay(dayId: string, fn: (d: RoutineDay) => void) {
   });
 }
 
-/** Tras cambiar los días de la rutina, reasigna los días futuros planificados en orden. */
-function remapFuturePlan() {
-  mutate((s) => {
-    const today = todayKey();
-    const future = Object.keys(s.plan).filter((d) => d >= today);
-    for (const d of future) delete s.plan[d];
-    Object.assign(s.plan, assignRotation(s, future));
-  });
-}
-
 export function Routine() {
   const s = useAppState();
   const exMap = useExMap();
-  const [sel, setSel] = useState(() => Math.max(0, s.routine.findIndex((d) => d.mine && !d.exercises.length)));
+  const [sel, setSel] = useState(() => {
+    const wanted = peekPendingDay();
+    const i = wanted ? s.routine.findIndex((d) => d.id === wanted) : -1;
+    return i >= 0 ? i : Math.max(0, s.routine.findIndex((d) => d.mine && !d.exercises.length));
+  });
   const [regenOpen, setRegenOpen] = useState(false);
   const [newDayOpen, setNewDayOpen] = useState(false);
   const [adding, setAdding] = useState(false);
@@ -52,6 +47,7 @@ export function Routine() {
   useEffect(() => {
     if (sel >= s.routine.length) setSel(Math.max(0, s.routine.length - 1));
   }, [s.routine.length, sel]);
+  useEffect(() => setPendingDay(null), []);
 
   const day = s.routine[sel] as RoutineDay | undefined;
   const pace = useMemo(() => paceFactor(s.logs, exMap), [s.logs, exMap]);
@@ -70,7 +66,13 @@ export function Routine() {
       for (const id of ids) {
         const ex = exMap.get(id);
         if (!ex) continue;
-        d.exercises.push({ uid: uid(), exerciseId: id, ...scheme(st.profile.goal, ex, st.profile.level, st.profile.setsPref) });
+        const sc = scheme(st.profile.goal, ex, st.profile.level, st.profile.setsPref);
+        if (ex.unit === 'min') sc.repsMin = sc.repsMax = st.profile.cardioMin || 15;
+        const item = { uid: uid(), exerciseId: id, ...sc };
+        // los ejercicios de fuerza van antes del cardio final
+        const cardioAt = d.exercises.findIndex((e) => exMap.get(e.exerciseId)?.unit === 'min');
+        if (ex.unit !== 'min' && cardioAt >= 0) d.exercises.splice(cardioAt, 0, item);
+        else d.exercises.push(item);
       }
     });
     toast(ids.length === 1 ? 'Ejercicio añadido' : `${ids.length} ejercicios añadidos`);
@@ -104,7 +106,10 @@ export function Routine() {
     mutate((st) => {
       const d = st.routine.find((x) => x.id === target.id);
       if (!d) return;
-      d.exercises.push({ uid: uid(), exerciseId: ex.id, ...scheme(st.profile.goal, ex, st.profile.level, st.profile.setsPref) });
+      const item = { uid: uid(), exerciseId: ex.id, ...scheme(st.profile.goal, ex, st.profile.level, st.profile.setsPref) };
+      const cardioAt = d.exercises.findIndex((e) => exMap.get(e.exerciseId)?.unit === 'min');
+      if (cardioAt >= 0) d.exercises.splice(cardioAt, 0, item);
+      else d.exercises.push(item);
       if (!d.focus.includes(m)) d.focus.push(m);
     });
     const idx = s.routine.indexOf(target);
@@ -267,10 +272,17 @@ export function Routine() {
               {day.exercises.map((re, i) => {
                 const ex = exMap.get(re.exerciseId);
                 const seg = ex?.unit === 'seg';
+                const cardio = ex?.unit === 'min';
                 return (
-                  <li key={re.uid} className="rx">
+                  <li key={re.uid} className={`rx ${cardio ? 'rx-cardio' : ''}`}>
                     <div className="rx-head">
                       <span className="rx-num">{i + 1}</span>
+                      <button className="rx-thumb" onClick={() => ex && setDetail(ex.id)} aria-label={`Ver cómo se hace ${ex?.name ?? ''}`}>
+                        <Thumb id={re.exerciseId} size={52} />
+                        <span className="rx-thumb-play">
+                          <Icon name="play" size={12} />
+                        </span>
+                      </button>
                       <button className="rx-name" onClick={() => ex && setDetail(ex.id)}>
                         <strong>{ex?.name ?? 'Ejercicio eliminado'}</strong>
                         {ex && (
@@ -306,6 +318,14 @@ export function Routine() {
                         </button>
                       </div>
                     </div>
+                    {cardio ? (
+                    <div className="rx-controls">
+                      <div className="rx-field">
+                        <span>Minutos</span>
+                        <Stepper small label="minutos" value={re.repsMax} min={5} max={60} step={5} onChange={(v) => updateExercise(day.id, re.uid, { repsMin: v, repsMax: v })} />
+                      </div>
+                    </div>
+                    ) : (
                     <div className="rx-controls">
                       <div className="rx-field">
                         <span>Series</span>
@@ -332,6 +352,7 @@ export function Routine() {
                         </select>
                       </label>
                     </div>
+                    )}
                     <div className="rx-actions">
                       <button className="btn sm secondary" onClick={() => setSwap({ uid: re.uid, exId: re.exerciseId })}>
                         <Icon name="swap" size={14} /> Cambiar

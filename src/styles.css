@@ -2257,3 +2257,220 @@ input[type='checkbox'] {
     transition: none !important;
   }
 }
+
+/* ───────────────────────── Fotos y video ───────────────────────── */
+.thumb {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  border-radius: 10px;
+  object-fit: cover;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+.thumb-empty {
+  color: var(--muted);
+}
+.rx-thumb {
+  position: relative;
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  border-radius: 10px;
+}
+.rx-thumb-play {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+}
+.photos {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.photos-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 3 / 2;
+  padding: 0;
+  border: 0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: var(--surface-2);
+}
+.photos-stage img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transition: opacity 0.35s ease;
+}
+.photos-stage img.on {
+  opacity: 1;
+}
+.photos figcaption {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+.photos figcaption button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  border-radius: 999px;
+  padding: 4px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.photos figcaption button.on {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-text);
+}
+.video-box {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.video-frame {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #000;
+}
+.video-frame iframe {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+}
+.video-box a.btn {
+  text-decoration: none;
+}
+.video-form {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* ───────────────────────── Bienvenida e instalación ───────────────────────── */
+.welcome {
+  border-color: color-mix(in srgb, var(--accent) 40%, transparent);
+}
+.welcome-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 14px;
+}
+.welcome-list li {
+  display: grid;
+  grid-template-columns: 18px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+.welcome-list svg {
+  margin-top: 2px;
+  color: var(--accent-text);
+}
+.install-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  font-size: 14px;
+}
+.install-row .brand-mark {
+  flex: none;
+}
+.mini-list li {
+  display: grid;
+  grid-template-columns: 40px 1fr auto;
+  align-items: center;
+  gap: 10px;
+}
+.mini-name {
+  min-width: 0;
+}
+.edit-day {
+  align-self: flex-start;
+  margin-top: -4px;
+}
+.weekday-chips .chip {
+  min-width: 52px;
+  justify-content: center;
+}
+
+/* ───────────────────────── Cardio ───────────────────────── */
+.rx-cardio {
+  background: color-mix(in srgb, var(--accent-soft) 45%, transparent);
+  border-radius: 12px;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.cardio-run {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--accent-soft);
+}
+.cardio-label {
+  font-size: 13px;
+  color: var(--text-2);
+  font-weight: 600;
+}
+.cardio-time {
+  font-size: 44px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.cardio-run .meter {
+  width: 100%;
+  flex: none;
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+.cardio-done {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.cardio-hint {
+  font-weight: 500;
+  font-size: 13px;
+  opacity: 0.85;
+}
+
+.field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn-row > .btn.grow {
+  min-width: 0;
+  white-space: normal;
+}

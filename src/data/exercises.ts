@@ -10,7 +10,7 @@ type Row = [
   level: 1 | 2 | 3,
   pattern: string,
   tip: string,
-  unit?: 'seg',
+  unit?: 'seg' | 'min',
 ];
 
 // Banco de ejercicios. "pattern" agrupa movimientos equivalentes para los cambios inteligentes.
@@ -167,6 +167,17 @@ const ROWS: Row[] = [
   ['russian-twist', 'Giros rusos', 'core', [], 'corporal', 'a', 1, 'rotacion', 'Torso inclinado atrás; gira de lado a lado. Con disco es más difícil.'],
   ['lenador-polea', 'Leñador en polea', 'core', [], 'polea', 'a', 1, 'rotacion', 'Gira desde el torso llevando la polea en diagonal.'],
   ['pallof', 'Press Pallof', 'core', [], 'polea', 'a', 1, 'anti-rotacion', 'De lado a la polea, empuja al frente y resiste el giro.'],
+
+  // ───────────── CARDIO (se mide en minutos) ─────────────
+  ['caminadora', 'Caminadora (caminar rápido)', 'cardio', [], 'maquina', 'a', 1, 'cardio', 'Camina a paso rápido (5–6 km/h) sin agarrarte de las barras. Para quemar más sin correr, sube la inclinación.', 'min'],
+  ['caminadora-inclinada', 'Caminadora con inclinación', 'cardio', ['gluteos', 'pantorrillas'], 'maquina', 'a', 1, 'cardio', 'Inclinación 10–15 % a 4,5–5,5 km/h. Espalda recta y sin colgarte de las barras.', 'min'],
+  ['trotar', 'Trotar en caminadora', 'cardio', [], 'maquina', 'a', 2, 'cardio', 'Ritmo en el que puedas hablar con frases cortas. Pisada suave, pasos cortos.', 'min'],
+  ['bicicleta', 'Bicicleta estática', 'cardio', ['cuadriceps'], 'maquina', 'a', 1, 'cardio', 'Ajusta el asiento a la altura de la cadera; la rodilla queda casi estirada abajo.', 'min'],
+  ['bicicleta-reclinada', 'Bicicleta reclinada', 'cardio', [], 'maquina', 'a', 1, 'cardio', 'Cómoda para la espalda. Mantén una cadencia constante.', 'min'],
+  ['eliptica', 'Elíptica', 'cardio', [], 'maquina', 'a', 1, 'cardio', 'Empuja y tira de las manijas para mover también los brazos. Bajo impacto en rodillas.', 'min'],
+  ['escaladora', 'Escaladora (stairmaster)', 'cardio', ['gluteos'], 'maquina', 'a', 2, 'cardio', 'Pisa con todo el pie y no te apoyes en las barras.', 'min'],
+  ['remo-ergometro', 'Máquina de remo', 'cardio', ['espalda'], 'maquina', 'a', 2, 'cardio', 'Empuja primero con las piernas, luego tira con la espalda y por último los brazos.', 'min'],
+  ['saltar-cuerda', 'Saltar la cuerda', 'cardio', ['pantorrillas'], 'corporal', 'a', 2, 'cardio', 'Saltos pequeños sobre la punta de los pies, muñecas girando la cuerda.', 'min'],
 ];
 
 export const BANK: Exercise[] = ROWS.map(([id, name, primary, secondary, equipment, kind, level, pattern, tip, unit]) => ({
@@ -181,3 +192,5 @@ export const BANK: Exercise[] = ROWS.map(([id, name, primary, secondary, equipme
   tip,
   unit: unit ?? 'reps',
 }));
+
+export const CARDIO = BANK.filter((e) => e.unit === 'min');

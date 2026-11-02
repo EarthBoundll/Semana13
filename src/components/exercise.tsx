@@ -8,9 +8,11 @@ import { mutate, uid, useAppState, useExMap } from '../lib/store';
 import type { Equipment, Exercise, Kind, Muscle } from '../types';
 import { LineChart } from './charts';
 import { Icon } from './Icon';
+import { ExercisePhotos, ExerciseVideo, Thumb } from './media';
 import { Chip, Segmented, Sheet, toast } from './ui';
 
 export function exMeta(e: Exercise): string {
+  if (e.unit === 'min') return `Cardio · ${EQUIPMENT[e.equipment]}`;
   return `${MUSCLES[e.primary].label.split(' ')[0]} · ${EQUIPMENT[e.equipment]} · ${e.kind === 'compuesto' ? 'Multiarticular' : 'Aislado'}`;
 }
 
@@ -54,6 +56,7 @@ export function ExerciseRow({
   const bad = s.disliked.includes(ex.id);
   return (
     <button type="button" className={`ex-row ${selected ? 'selected' : ''} ${bad ? 'disliked' : ''}`} onClick={onClick} aria-pressed={selected}>
+      <Thumb id={ex.id} size={44} />
       <span className="ex-row-main">
         <span className="ex-row-name">
           {ex.name}
@@ -269,7 +272,7 @@ export function CustomExerciseSheet({
   const [primary, setPrimary] = useState<Muscle>(defaultMuscle);
   const [equipment, setEquipment] = useState<Equipment>('maquina');
   const [kind, setKind] = useState<Kind>('aislamiento');
-  const [unit, setUnit] = useState<'reps' | 'seg'>('reps');
+  const [unit, setUnit] = useState<'reps' | 'seg' | 'min'>('reps');
   const [tip, setTip] = useState('');
 
   const save = () => {
@@ -278,7 +281,7 @@ export function CustomExerciseSheet({
     const ex: Exercise = {
       id,
       name: name.trim(),
-      primary,
+      primary: unit === 'min' ? 'cardio' : primary,
       secondary: [],
       equipment,
       kind,
@@ -353,6 +356,7 @@ export function CustomExerciseSheet({
           options={[
             { value: 'reps', label: 'Repeticiones' },
             { value: 'seg', label: 'Segundos' },
+            { value: 'min', label: 'Minutos (cardio)' },
           ]}
         />
       </div>
@@ -381,7 +385,11 @@ export function ExerciseDetail({ id, onClose, onOpen }: { id: string | null; onC
     mutate((st) => {
       const d = st.routine.find((x) => x.id === dayId);
       if (!d) return;
-      d.exercises.push({ uid: uid(), exerciseId: ex.id, sets: st.profile.setsPref ?? 3, repsMin: ex.unit === 'seg' ? 30 : 8, repsMax: ex.unit === 'seg' ? 45 : 12, rest: ex.kind === 'compuesto' ? 120 : 75 });
+      d.exercises.push(
+        ex.unit === 'min'
+          ? { uid: uid(), exerciseId: ex.id, sets: 1, repsMin: st.profile.cardioMin || 15, repsMax: st.profile.cardioMin || 15, rest: 0 }
+          : { uid: uid(), exerciseId: ex.id, sets: st.profile.setsPref ?? 3, repsMin: ex.unit === 'seg' ? 30 : 8, repsMax: ex.unit === 'seg' ? 45 : 12, rest: ex.kind === 'compuesto' ? 120 : 75 },
+      );
     });
     const i = s.routine.findIndex((d) => d.id === dayId);
     toast(`Añadido al día ${String.fromCharCode(65 + i)}`);
@@ -389,6 +397,8 @@ export function ExerciseDetail({ id, onClose, onOpen }: { id: string | null; onC
 
   return (
     <Sheet open={Boolean(ex)} onClose={onClose} title={ex.name} wide>
+      <ExercisePhotos ex={ex} />
+      <ExerciseVideo ex={ex} />
       <div className="chips">
         <span className="tag strong">{MUSCLES[ex.primary].label}</span>
         {ex.secondary.map((m) => (

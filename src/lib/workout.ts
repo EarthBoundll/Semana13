@@ -123,6 +123,8 @@ export function fitActiveToDeadline(): { changes: string[]; fits: boolean } {
       const le = a.exercises.find((e) => e.uid === it.key);
       if (!le) continue;
       le.target.rest = it.rest;
+      le.target.repsMin = it.repsMin;
+      le.target.repsMax = it.repsMax;
       let left = le.sets.filter((x) => !x.done).length;
       while (left > it.sets) {
         const idx = le.sets.map((x) => x.done).lastIndexOf(false);

@@ -10,7 +10,11 @@ import { dayById, dayLetter, nextDayIdFor, streak, weekStats } from '../lib/plan
 import { fmtKg, logSetsDone, logVolume } from '../lib/progression';
 import { mutate, useAppState, useExMap } from '../lib/store';
 import { startWorkout } from '../lib/workout';
-import { useNav, type Route } from '../nav';
+import { Thumb } from '../components/media';
+import { habitualDays } from '../lib/plan';
+import { isIOS, isStandalone, promptInstall, useCanInstall } from '../lib/install';
+import { fmtHHMM, parseHHMM } from '../lib/timing';
+import { setPendingDay, useNav, type Route } from '../nav';
 import type { WorkoutLog } from '../types';
 
 export function Home() {
@@ -89,6 +93,9 @@ export function Home() {
     <div className="page">
       <PageHeader title={hello} subtitle={fmtLong(today)} />
 
+      {!s.dismissed.includes('welcome') && <WelcomeCard />}
+      <InstallCard />
+
       {s.active && (
         <button className="banner" onClick={() => go('entrenar')}>
           <Icon name="timer" />
@@ -125,19 +132,21 @@ export function Home() {
                 .slice(0, 4)
                 .map((m) => MUSCLES[m].label.split(' ')[0])
                 .join(' · ')}
-              {plannedDay.exercises.length > 0 && ` — ${plannedDay.exercises.length} ejercicios · ~${estimateMinutes(plannedDay.exercises, exMap, pace)} min`}
+              {plannedDay.exercises.length > 0 && ` — ${dayCountText(plannedDay.exercises.map((e) => ({ ex: exMap.get(e.exerciseId), min: e.repsMax })))} · ~${estimateMinutes(plannedDay.exercises, exMap, pace)} min`}
             </p>
             {plannedDay.exercises.length > 0 && finishLine(estimateMinutes(plannedDay.exercises, exMap, pace))}
             {plannedDay.exercises.length ? (
               <ol className="mini-list">
-                {plannedDay.exercises.slice(0, 6).map((e) => (
-                  <li key={e.uid}>
-                    <span>{exMap.get(e.exerciseId)?.name ?? 'Ejercicio'}</span>
-                    <span className="muted">
-                      {e.sets}×{e.repsMin}–{e.repsMax}
-                    </span>
-                  </li>
-                ))}
+                {plannedDay.exercises.map((e) => {
+                  const ex = exMap.get(e.exerciseId);
+                  return (
+                    <li key={e.uid}>
+                      <Thumb id={e.exerciseId} size={40} />
+                      <span className="mini-name">{ex?.name ?? 'Ejercicio'}</span>
+                      <span className="muted">{ex?.unit === 'min' ? `${e.repsMax} min` : `${e.sets}×${e.repsMin}–${e.repsMax}`}</span>
+                    </li>
+                  );
+                })}
               </ol>
             ) : (
               <p className="muted small">Este día aún no tiene ejercicios.</p>
@@ -150,6 +159,15 @@ export function Home() {
                 Otro día
               </button>
             </div>
+            <button
+              className="btn ghost sm edit-day"
+              onClick={() => {
+                setPendingDay(plannedDay.id);
+                go('rutina');
+              }}
+            >
+              <Icon name="edit" size={14} /> Cambiar ejercicios o series de este día
+            </button>
           </>
         ) : (
           <>
@@ -321,4 +339,109 @@ export function LogDetail({ log, onClose }: { log: WorkoutLog | null; onClose: (
       </button>
     </Sheet>
   );
+}
+
+function WelcomeCard() {
+  const s = useAppState();
+  const { go } = useNav();
+  const p = s.profile;
+  const days = habitualDays(p)
+    .map((i) => DOW_LONG[i].toLowerCase())
+    .join(' y ')
+    .replace(/ y (?=.* y )/g, ', ');
+  const exMap = useExMap();
+  const cardio = p.cardioId && p.cardioMin ? (exMap.get(p.cardioId)?.name ?? 'cardio') : null;
+  return (
+    <section className="card welcome">
+      <h3 className="card-title">
+        <Icon name="spark" size={18} /> Tu plan ya está listo
+      </h3>
+      <ul className="welcome-list">
+        <li>
+          <Icon name="calendar" size={16} />
+          <span>
+            Vas los <strong>{days}</strong>. Cada semana se planifica sola y aquí te muestro lo que toca hoy.
+          </span>
+        </li>
+        <li>
+          <Icon name="dumbbell" size={16} />
+          <span>
+            {p.exercisesPerDay ?? 'Varios'} ejercicios por día{cardio ? ` y al final ${p.cardioMin} min de ${cardio.toLowerCase()}` : ''}. Toca la foto de cada ejercicio para ver cómo se hace.
+          </span>
+        </li>
+        {p.gymStart && p.gymEnd && (
+          <li>
+            <Icon name="timer" size={16} />
+            <span>
+              De {fmtHHMM(parseHHMM(p.gymStart) ?? 0)} a {fmtHHMM(parseHHMM(p.gymEnd) ?? 0)}: te mido el tiempo de cada ejercicio.
+            </span>
+          </li>
+        )}
+        <li>
+          <Icon name="lock" size={16} />
+          <span>Sin cuentas ni contraseñas: todo se guarda solo en este celular.</span>
+        </li>
+      </ul>
+      <div className="btn-row wrap">
+        <button className="btn secondary" onClick={() => go('ajustes')}>
+          Cambiar mis días, ejercicios u horario
+        </button>
+        <button
+          className="btn ghost"
+          onClick={() =>
+            mutate((st) => {
+              st.dismissed.push('welcome');
+            })
+          }
+        >
+          Entendido
+        </button>
+      </div>
+    </section>
+  );
+}
+
+function InstallCard() {
+  const s = useAppState();
+  const canInstall = useCanInstall();
+  if (isStandalone() || s.dismissed.includes('install')) return null;
+  const ios = isIOS();
+  if (!canInstall && !ios) return null;
+  return (
+    <section className="card install">
+      <div className="install-row">
+        <span className="brand-mark">
+          <Icon name="download" size={20} />
+        </span>
+        <p>
+          <strong>Instala GymPlan en tu celular.</strong> Se abre como una app, funciona sin internet en el gym y tus datos quedan guardados para siempre.
+          {ios && !canInstall && ' En iPhone: toca Compartir y luego "Agregar a inicio".'}
+        </p>
+      </div>
+      <div className="btn-row">
+        {canInstall && (
+          <button className="btn primary" onClick={() => void promptInstall()}>
+            Instalar
+          </button>
+        )}
+        <button
+          className="btn ghost"
+          onClick={() =>
+            mutate((st) => {
+              st.dismissed.push('install');
+            })
+          }
+        >
+          Ahora no
+        </button>
+      </div>
+    </section>
+  );
+}
+
+/** "4 ejercicios + 15 min de caminadora" */
+function dayCountText(items: { ex?: { unit?: string; name: string }; min: number }[]): string {
+  const strength = items.filter((i) => i.ex?.unit !== 'min').length;
+  const cardio = items.find((i) => i.ex?.unit === 'min');
+  return `${strength} ejercicio${strength === 1 ? '' : 's'}${cardio ? ` + ${cardio.min} min de ${cardio.ex!.name.split(' (')[0].toLowerCase()}` : ''}`;
 }

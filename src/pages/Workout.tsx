@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExerciseDetail, ExercisePicker } from '../components/exercise';
 import { Icon } from '../components/Icon';
+import { Thumb } from '../components/media';
 import { Sheet, toast, useNow } from '../components/ui';
 import { fmtRest } from '../data/meta';
 import { fmtDate, fmtDuration } from '../lib/dates';
@@ -24,6 +25,17 @@ import { useNav } from '../nav';
 import type { LoggedExercise, LoggedSet } from '../types';
 
 const mmss = (ms: number) => fmtDuration(Math.abs(ms));
+
+/** Marca el cardio como hecho con los minutos dados */
+function completeCardio(uid: string, minutes: number) {
+  mutate((s) => {
+    const a = s.active;
+    const le = a?.exercises.find((e) => e.uid === uid);
+    if (!a || !le) return;
+    if (a.currentUid === uid) stopCurrentIn(a, Date.now());
+    le.sets = [{ weight: null, reps: Math.max(1, Math.round(minutes)), done: true }];
+  });
+}
 
 function markAlert(id: string) {
   mutate((s) => {
@@ -86,6 +98,14 @@ export function Workout() {
   // Avisos de tiempo: ejercicio pasado de su tiempo, 10 min antes y a la hora límite
   useEffect(() => {
     const fired = new Set(a.alerts ?? []);
+    // el cardio se completa solo al llegar a sus minutos
+    if (current && exMap.get(current.exerciseId)?.unit === 'min' && exerciseElapsed(current, a, now) >= current.target.repsMax * 60000) {
+      const ex = exMap.get(current.exerciseId);
+      completeCardio(current.uid, current.target.repsMax);
+      beep();
+      setNotice(`¡Listo! ${current.target.repsMax} min de ${ex?.name.toLowerCase() ?? 'cardio'} completados.`);
+      return;
+    }
     if (current && current.budgetSec && !fired.has(`over-${current.uid}`) && exerciseElapsed(current, a, now) > current.budgetSec * 1000) {
       const ex = exMap.get(current.exerciseId);
       markAlert(`over-${current.uid}`);
@@ -302,6 +322,7 @@ export function Workout() {
           const sug = suggestions.get(le.uid);
           const past = ex ? history(s.logs, ex.id, 1)[0] : undefined;
           const seg = ex?.unit === 'seg';
+          const cardio = ex?.unit === 'min';
           const allDone = le.sets.length > 0 && le.sets.every((x) => x.done);
           const isCurrent = a.currentUid === le.uid;
           const spent = exerciseElapsed(le, a, now);
@@ -311,19 +332,51 @@ export function Workout() {
             <section key={le.uid} className={`card wk-ex ${allDone ? 'complete' : ''} ${isCurrent ? 'current' : ''}`}>
               <div className="wk-ex-head">
                 <span className="rx-num">{idx + 1}</span>
+                <button className="rx-thumb" onClick={() => ex && setDetail(ex.id)} aria-label={`Ver cómo se hace ${ex?.name ?? ''}`}>
+                  <Thumb id={le.exerciseId} size={56} />
+                  <span className="rx-thumb-play">
+                    <Icon name="play" size={12} />
+                  </span>
+                </button>
                 <button className="rx-name" onClick={() => ex && setDetail(ex.id)}>
                   <strong>{ex?.name ?? 'Ejercicio'}</strong>
                   <small className="muted">
-                    {le.target.sets} × {le.target.repsMin}–{le.target.repsMax}
-                    {seg ? ' s' : ' reps'} · descanso {fmtRest(le.target.rest)}
+                    {cardio ? (
+                      `${le.target.repsMax} min`
+                    ) : (
+                      <>
+                        {le.target.sets} × {le.target.repsMin}–{le.target.repsMax}
+                        {seg ? ' s' : ' reps'} · descanso {fmtRest(le.target.rest)}
+                      </>
+                    )}
                   </small>
                 </button>
-                <button className="btn sm ghost" onClick={() => setSwapUid(le.uid)} aria-label={`Cambiar ${ex?.name}`}>
-                  <Icon name="swap" size={16} /> Cambiar
+                <button className="icon-btn" onClick={() => setSwapUid(le.uid)} aria-label={`Cambiar ${ex?.name ?? 'ejercicio'} por otro`} title="Cambiar por otro">
+                  <Icon name="swap" size={18} />
                 </button>
               </div>
 
-              {isCurrent ? (
+              {cardio ? (
+                <CardioBlock
+                  name={ex?.name ?? 'Cardio'}
+                  minutes={le.target.repsMax}
+                  spent={spent}
+                  isCurrent={isCurrent}
+                  done={allDone}
+                  doneMinutes={le.sets[0]?.reps ?? le.target.repsMax}
+                  onStart={() => {
+                    primeAudio();
+                    startExercise(le.uid);
+                  }}
+                  onFinish={() => completeCardio(le.uid, Math.max(1, Math.round(spent / 60000)) || le.target.repsMax)}
+                  onUndo={() =>
+                    patchActive((exs) => {
+                      const x = exs.find((e) => e.uid === le.uid);
+                      if (x) x.sets = [{ weight: null, reps: null, done: false }];
+                    })
+                  }
+                />
+              ) : isCurrent ? (
                 <div className={`ex-timer ${over ? 'over' : ''}`} role="timer">
                   <Icon name="timer" size={18} />
                   <span className="ex-timer-text">
@@ -358,18 +411,19 @@ export function Workout() {
                 </button>
               )}
 
-              {sug && (
+              {!cardio && sug && (
                 <p className={`suggest ${sug.tone}`}>
                   <Icon name={sug.tone === 'up' ? 'trend' : sug.tone === 'down' ? 'down' : sug.tone === 'new' ? 'info' : 'spark'} size={16} />
                   {sug.text}
                 </p>
               )}
-              {past && (
+              {!cardio && past && (
                 <p className="muted small">
                   Última vez ({fmtDate(past.date)}): {past.sets.map((x) => (x.weight ? `${fmtKg(x.weight)}×${x.reps}` : `${x.reps}${seg ? 's' : ''}`)).join(' · ')}
                 </p>
               )}
 
+              {!cardio && (
               <div className="set-table" role="table" aria-label={`Series de ${ex?.name}`}>
                 <div className="set-row set-head" role="row">
                   <span role="columnheader">Serie</span>
@@ -401,7 +455,10 @@ export function Workout() {
                   );
                 })}
               </div>
+              )}
               <div className="btn-row">
+                {!cardio && (
+                <>
                 <button
                   className="btn sm ghost"
                   onClick={() =>
@@ -425,6 +482,8 @@ export function Workout() {
                 >
                   <Icon name="minus" size={14} /> Serie
                 </button>
+                </>
+                )}
                 <button
                   className="btn sm ghost danger push-right"
                   onClick={() =>
@@ -632,5 +691,65 @@ function FinishSheet({ open, onClose, onSaved }: { open: boolean; onClose: () =>
       )}
       <p className="muted small">La próxima vez te sugeriré el peso según cómo te fue hoy.</p>
     </Sheet>
+  );
+}
+
+function CardioBlock({
+  name,
+  minutes,
+  spent,
+  isCurrent,
+  done,
+  doneMinutes,
+  onStart,
+  onFinish,
+  onUndo,
+}: {
+  name: string;
+  minutes: number;
+  spent: number;
+  isCurrent: boolean;
+  done: boolean;
+  doneMinutes: number;
+  onStart: () => void;
+  onFinish: () => void;
+  onUndo: () => void;
+}) {
+  const total = minutes * 60000;
+  const left = Math.max(0, total - spent);
+  if (done)
+    return (
+      <div className="cardio-done">
+        <p className="ex-done-time">
+          <Icon name="check" size={16} /> {doneMinutes} min de {name.toLowerCase()} hechos
+        </p>
+        <button className="btn sm ghost" onClick={onUndo}>
+          Deshacer
+        </button>
+      </div>
+    );
+  if (isCurrent)
+    return (
+      <div className="cardio-run" role="timer">
+        <span className="cardio-label">Quedan</span>
+        <strong className="cardio-time">{fmtDuration(left)}</strong>
+        <span className="meter" aria-hidden="true">
+          <span style={{ width: `${Math.min(100, (spent / total) * 100)}%` }} />
+        </span>
+        <div className="btn-row">
+          <button className="btn sm ghost" onClick={pauseExercise}>
+            Pausar
+          </button>
+          <button className="btn sm secondary" onClick={onFinish}>
+            Terminar ya ({Math.max(1, Math.round(spent / 60000))} min)
+          </button>
+        </div>
+      </div>
+    );
+  return (
+    <button className="btn primary block start-ex" onClick={onStart}>
+      <Icon name="play" size={16} /> {spent > 0 ? `Continuar (quedan ${fmtDuration(left)})` : `Empezar ${minutes} min`}
+      <span className="cardio-hint">· suena al terminar</span>
+    </button>
   );
 }

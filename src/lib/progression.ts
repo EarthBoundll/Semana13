@@ -64,6 +64,14 @@ export interface Suggestion {
  * sube el peso; si te quedaste corto dos veces, baja un poco; si no, mantén y suma reps.
  */
 export function suggest(ex: Exercise, target: LoggedExercise['target'], logs: WorkoutLog[]): Suggestion {
+  if (ex.unit === 'min') {
+    return {
+      tone: 'keep',
+      weight: null,
+      reps: Array(target.sets).fill(target.repsMax),
+      text: `${target.repsMax} min a ritmo constante. Si terminas con energía, la próxima vez sube un poco la velocidad o la inclinación.`,
+    };
+  }
   const past = history(logs, ex.id, 2);
   const n = target.sets;
   const unit = ex.unit === 'seg' ? 's' : '';

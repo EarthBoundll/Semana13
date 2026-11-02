@@ -72,6 +72,7 @@ export function deadlineFor(p: Profile, now = Date.now()): number {
 // ─────────────────────────── Estimaciones ───────────────────────────
 
 export function workSec(ex: Exercise | undefined, repsMin: number, repsMax: number): number {
+  if (ex?.unit === 'min') return repsMax * 60;
   return ex?.unit === 'seg' ? repsMax : Math.round(((repsMin + repsMax) / 2) * 3.5);
 }
 
@@ -136,23 +137,31 @@ export function fitPlan(items: FitItem[], targetSec: number, pace = 1): { items:
   }
   if (shortened) changes.push('Descansos más cortos (1:30 en multiarticulares, 1:00 en aislados)');
 
-  const iso = (x: FitItem) => x.ex?.kind !== 'compuesto';
+  const cardio = (x: FitItem) => x.ex?.unit === 'min';
+  const iso = (x: FitItem) => x.ex?.kind !== 'compuesto' && !cardio(x);
   for (let guard = 0; guard < 200 && total() > targetSec; guard++) {
     const order = [...it].reverse();
-    const alive = it.filter((x) => x.sets > 0).length;
+    const alive = it.filter((x) => x.sets > 0 && !cardio(x)).length;
     const cut =
       order.find((x) => iso(x) && x.sets > Math.max(x.minSets, 2)) ??
-      order.find((x) => !iso(x) && x.sets > Math.max(x.minSets, 3));
+      order.find((x) => !iso(x) && !cardio(x) && x.sets > Math.max(x.minSets, 3));
     if (cut) {
       cut.sets--;
       continue;
     }
-    const drop = order.find((x) => x.removable && x.sets > 0 && iso(x) && alive > 3) ?? order.find((x) => x.removable && x.sets > 0 && alive > 3);
+    // el cardio se acorta de 5 en 5 min (hasta 10 min)
+    const shortCardio = order.find((x) => cardio(x) && x.sets > 0 && x.repsMax > 10);
+    if (shortCardio) {
+      shortCardio.repsMax = Math.max(10, shortCardio.repsMax - 5);
+      shortCardio.repsMin = Math.min(shortCardio.repsMin, shortCardio.repsMax);
+      continue;
+    }
+    const drop = order.find((x) => x.removable && x.sets > 0 && iso(x) && alive > 3) ?? order.find((x) => x.removable && x.sets > 0 && !cardio(x) && alive > 3);
     if (drop) {
       drop.sets = 0;
       continue;
     }
-    const last = order.find((x) => x.sets > Math.max(x.minSets, 2));
+    const last = order.find((x) => !cardio(x) && x.sets > Math.max(x.minSets, 2));
     if (last) {
       last.sets--;
       continue;
@@ -164,6 +173,7 @@ export function fitPlan(items: FitItem[], targetSec: number, pace = 1): { items:
     const orig = items.find((o) => o.key === x.key)!;
     if (x.sets === 0 && orig.sets > 0) changes.push(`Quité «${x.name}»`);
     else if (x.sets < orig.sets) changes.push(`${x.name}: ${orig.sets} → ${x.sets} series`);
+    else if (x.repsMax < orig.repsMax && x.ex?.unit === 'min') changes.push(`${x.name}: ${orig.repsMax} → ${x.repsMax} min`);
   }
   return { items: it, changes, fits: total() <= targetSec };
 }
@@ -208,6 +218,7 @@ export function budgetFor(le: LoggedExercise, a: WorkoutLog, exMap: ExMap, now: 
   for (const e of a.exercises) need += remainingSec(e, exMap.get(e.exerciseId));
   need *= pace;
   const ex = exMap.get(le.exerciseId);
+  if (ex?.unit === 'min') return le.target.repsMax * 60; // el cardio dura lo que dura
   const avail = (deadlineOf(a) - now) / 1000;
   const scale = need > 0 ? Math.min(1.25, Math.max(0.5, avail / need)) : 1;
   return Math.round(fullSec(le, ex) * pace * scale);
@@ -235,7 +246,7 @@ export function fitRoutineDay(
   const out = exercises
     .map((re) => {
       const it = res.items.find((x) => x.key === re.uid)!;
-      return { ...re, sets: it.sets, rest: it.rest };
+      return { ...re, sets: it.sets, rest: it.rest, repsMin: it.repsMin, repsMax: it.repsMax };
     })
     .filter((re) => re.sets > 0);
   return { exercises: out, changes: res.changes, fits: res.fits };

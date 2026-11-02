@@ -28,3 +28,12 @@ export const NavContext = createContext<{ route: Route; go: (r: Route) => void }
 export function useNav() {
   return useContext(NavContext);
 }
+
+/** Día de rutina que se debe mostrar al abrir la pestaña Rutina */
+let pendingDay: string | null = null;
+export function setPendingDay(id: string | null) {
+  pendingDay = id;
+}
+export function peekPendingDay(): string | null {
+  return pendingDay;
+}

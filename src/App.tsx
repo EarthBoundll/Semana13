@@ -1,11 +1,12 @@
 import { useEffect } from 'react';
 import { Icon, type IconName } from './components/Icon';
-import { Toaster, toast } from './components/ui';
-import { applyTheme, useAppState } from './lib/store';
+import { Toaster } from './components/ui';
+import { firstRun, requestPersistentStorage } from './lib/actions';
+import { autoPlanCurrentWeek, needsAutoPlan } from './lib/plan';
+import { applyTheme, getState, mutate, useAppState } from './lib/store';
 import { NavContext, useHashRoute, type Route } from './nav';
 import { Bank } from './pages/Bank';
 import { Home } from './pages/Home';
-import { Onboarding } from './pages/Onboarding';
 import { Routine } from './pages/Routine';
 import { Settings } from './pages/Settings';
 import { Week } from './pages/Week';
@@ -26,19 +27,24 @@ export default function App() {
 
   useEffect(() => applyTheme(s.profile.theme), [s.profile.theme]);
 
-  if (!s.onboarded) {
-    return (
-      <NavContext.Provider value={{ route, go }}>
-        <Onboarding
-          onDone={(own) => {
-            go('rutina');
-            toast(own ? 'Rutina lista. Ahora agrega los ejercicios de tu día' : '¡Tu rutina está lista!');
-          }}
-        />
-        <Toaster />
-      </NavContext.Provider>
-    );
-  }
+  // Sin registro ni preguntas: la primera vez se arma todo solo y los datos quedan en este celular
+  useEffect(() => {
+    if (!s.onboarded) firstRun();
+  }, [s.onboarded]);
+
+  // Cada semana nueva se planifica sola con tus días habituales
+  useEffect(() => {
+    const check = () => {
+      if (getState().onboarded && needsAutoPlan(getState())) mutate(autoPlanCurrentWeek);
+    };
+    check();
+    void requestPersistentStorage();
+    const onVisible = () => document.visibilityState === 'visible' && check();
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
+
+  if (!s.onboarded) return null;
 
   const page =
     route === 'entrenar' && s.active ? (

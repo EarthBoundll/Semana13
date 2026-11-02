@@ -4,6 +4,14 @@ Web para planificar y registrar tus días de gimnasio. Hecha con React + Vite y 
 
 ## Qué hace
 
+- **Sin cuentas ni preguntas**: al abrirla por primera vez ya trae tu plan armado (2 días, 4 ejercicios
+  + 15 min de caminadora, de 6:00 a 7:10). Todo se guarda solo en el celular; en Ajustes cambias lo que quieras.
+- **Detecta el día**: cada semana se planifica sola con tus días habituales y "Hoy" te muestra la rutina que
+  toca. Puedes cambiar el día, los ejercicios o las series cuando quieras.
+- **Fotos y video de cada ejercicio**: fotos de la posición inicial y final que se alternan como animación,
+  botón para ver videos en YouTube y opción de guardar tu video favorito para verlo dentro de la app.
+- **Cardio al final** (caminadora, bicicleta, elíptica…) con cuenta regresiva que suena al terminar.
+
 - **Rutina inteligente**: le dices cuántos días vas, tu objetivo, tu nivel y tu equipo, y arma la rutina
   (cuerpo completo, empuje/tirón/pierna, torso/pierna o por grupo muscular).
 - **Tu día propio**: si ya tienes un día armado, lo marcas como "mi día" y el generador detecta qué músculos
@@ -28,7 +36,7 @@ Web para planificar y registrar tus días de gimnasio. Hecha con React + Vite y 
   de cuándo llegas a la meta.
 - Funciona sin internet (PWA) y se puede instalar en el celular ("Agregar a pantalla de inicio").
 
-Los datos se guardan en el navegador del dispositivo. En **Ajustes** puedes descargar un respaldo (.json) y
+Los datos se guardan en el navegador del dispositivo. Fotos: [Free Exercise DB](https://github.com/yuhonas/free-exercise-db) (dominio público). En **Ajustes** puedes descargar un respaldo (.json) y
 restaurarlo en otro celular.
 
 ## Desarrollo

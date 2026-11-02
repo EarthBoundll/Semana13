@@ -1,6 +1,6 @@
 import type { Equipment, Goal, Level, Muscle, SplitStyle } from '../types';
 
-export const MUSCLES: Record<Muscle, { label: string; region: 'superior' | 'inferior' | 'core' }> = {
+export const MUSCLES: Record<Muscle, { label: string; region: 'superior' | 'inferior' | 'core' | 'cardio' }> = {
   pecho: { label: 'Pecho', region: 'superior' },
   espalda: { label: 'Espalda', region: 'superior' },
   hombros: { label: 'Hombros', region: 'superior' },
@@ -12,6 +12,7 @@ export const MUSCLES: Record<Muscle, { label: string; region: 'superior' | 'infe
   gluteos: { label: 'Glúteos', region: 'inferior' },
   pantorrillas: { label: 'Pantorrillas', region: 'inferior' },
   core: { label: 'Abdomen / core', region: 'core' },
+  cardio: { label: 'Cardio', region: 'cardio' },
 };
 
 export const MUSCLE_ORDER: Muscle[] = [
@@ -26,6 +27,7 @@ export const MUSCLE_ORDER: Muscle[] = [
   'gluteos',
   'pantorrillas',
   'core',
+  'cardio',
 ];
 
 export const UPPER: Muscle[] = ['pecho', 'espalda', 'hombros', 'biceps', 'triceps'];

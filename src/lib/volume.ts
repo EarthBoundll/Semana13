@@ -18,6 +18,7 @@ export function targets(level: Level): Record<Muscle, [number, number]> {
     pantorrillas: [3, 12],
     core: [3, 12],
     antebrazos: [0, 10],
+    cardio: [0, 9999],
   };
 }
 

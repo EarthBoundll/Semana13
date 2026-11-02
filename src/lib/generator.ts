@@ -7,6 +7,7 @@ import { HIGH_TOLERANCE, targets, volumeOf } from './volume';
 // ─────────────────────────── Series, repeticiones y tiempo ───────────────────────────
 
 export function scheme(goal: Goal, ex: Exercise, level: Level, setsPref: number | null) {
+  if (ex.unit === 'min') return { sets: 1, repsMin: 15, repsMax: 15, rest: 0 };
   if (ex.unit === 'seg') return { sets: setsPref ?? 3, repsMin: 30, repsMax: 45, rest: 45 };
   const comp = ex.kind === 'compuesto';
   const table: Record<Goal, [number, number, number, number]> = {
@@ -55,7 +56,7 @@ export function dayMuscleVector(day: RoutineDay, exMap: ExMap, secondaryWeight =
   }
   for (const re of day.exercises) {
     const ex = exMap.get(re.exerciseId);
-    if (!ex) continue;
+    if (!ex || ex.primary === 'cardio') continue;
     v[ex.primary] = (v[ex.primary] ?? 0) + re.sets;
     for (const s of ex.secondary) v[s] = (v[s] ?? 0) + re.sets * secondaryWeight;
   }
@@ -421,22 +422,24 @@ const SPLITS: Record<Exclude<SplitStyle, 'auto'>, string[][]> = {
   classic: [[], ['full'], ['upper', 'lower'], ['pechoTri', 'espaldaBi', 'piernaHombro'], ['pechoTri', 'espaldaBi', 'pierna', 'hombroCore'], ['pechoSolo', 'espaldaSolo', 'pierna', 'hombroSolo', 'brazos'], ['pechoTri', 'espaldaBi', 'lower', 'hombroCore', 'lower2', 'brazos']],
 };
 
-export function autoStyle(days: number, level: Level): Exclude<SplitStyle, 'auto'> {
+export function autoStyle(days: number, level: Level, compact = false): Exclude<SplitStyle, 'auto'> {
   if (days <= 1) return 'full';
+  // Pocos ejercicios por día: cuerpo completo para trabajar cada músculo 2–3 veces por semana
+  if (compact && days <= 3) return 'full';
   if (level === 'principiante') return days <= 3 ? 'full' : days === 4 ? 'upperlower' : 'ppl';
   if (days === 2 || days === 4) return 'upperlower';
   return 'ppl';
 }
 
 /** Mira el día propio del usuario y deduce qué estilo de rutina encaja mejor con él. */
-export function detectStyle(own: RoutineDay | undefined, days: number, level: Level, exMap: ExMap): Exclude<SplitStyle, 'auto'> {
-  if (!own) return autoStyle(days, level);
+export function detectStyle(own: RoutineDay | undefined, days: number, level: Level, exMap: ExMap, compact = false): Exclude<SplitStyle, 'auto'> {
+  if (!own) return autoStyle(days, level, compact);
   const top = mainMuscles(own, exMap, 0.12, 0);
   const hasUp = top.some((m) => UPPER.includes(m));
   const hasLow = top.some((m) => LOWER.includes(m));
   const has = (m: Muscle) => top.includes(m);
   if (hasUp && hasLow) return has('pecho') && has('espalda') ? 'full' : 'classic';
-  if (hasLow) return days === 2 || days === 4 ? 'upperlower' : autoStyle(days, level) === 'full' ? 'full' : 'ppl';
+  if (hasLow) return days === 2 || days === 4 ? 'upperlower' : autoStyle(days, level, compact) === 'full' ? 'full' : 'ppl';
   if (has('pecho') && has('espalda')) return days <= 3 && level === 'principiante' ? 'full' : 'upperlower';
   if (top.length <= 1) return 'classic';
   const pushOnly = top.every((m) => ['pecho', 'hombros', 'triceps', 'core'].includes(m));
@@ -512,6 +515,7 @@ function scoreFor(e: Exercise, slot: Slot, ctx: PickCtx, dayPatterns: Set<string
     if (e.equipment === 'banda') s -= 1;
     if (e.level === 3) s -= profile.level === 'intermedio' ? 3 : 0.5;
   }
+  if (e.equipment === 'kettlebell' && (profile.equipment.includes('barra') || profile.equipment.includes('mancuernas'))) s -= 1;
   // En un gym equipado, los aislados con peso corporal quedan como alternativa
   if (e.kind === 'aislamiento' && e.equipment === 'corporal' && e.primary !== 'core' && (profile.equipment.includes('maquina') || profile.equipment.includes('polea'))) s -= 1;
   if (e.custom) s += 0.5;
@@ -541,17 +545,36 @@ export function pickExercise(slot: Slot, ctx: PickCtx, dayIds: Set<string>, dayP
   return null;
 }
 
+/** El cardio que va al final de cada día según tus ajustes (o null) */
+export function cardioFor(profile: Profile, exMap: ExMap): RoutineExercise | null {
+  if (!profile.cardioId || !profile.cardioMin) return null;
+  const ex = exMap.get(profile.cardioId);
+  if (!ex) return null;
+  return { uid: uid(), exerciseId: ex.id, sets: 1, repsMin: profile.cardioMin, repsMax: profile.cardioMin, rest: 0 };
+}
+
+export function isCardio(re: RoutineExercise, exMap: ExMap): boolean {
+  return exMap.get(re.exerciseId)?.unit === 'min';
+}
+
+/** Minutos para pesas: lo que queda después de reservar el cardio */
+function strengthBudget(profile: Profile, exMap: ExMap): number {
+  const c = cardioFor(profile, exMap);
+  return planningBudget(profile) - (c ? c.repsMax + 1 : 0);
+}
+
 function buildFromSlots(slots: Slot[], ctx: PickCtx, exMap: ExMap): RoutineExercise[] {
   const { profile } = ctx;
   const out: RoutineExercise[] = [];
   const ids = new Set<string>();
   const patterns = new Set<string>();
-  const maxCount = profile.level === 'principiante' ? 6 : 9;
+  const maxCount = profile.exercisesPerDay ?? (profile.level === 'principiante' ? 6 : 9);
+  const budget = strengthBudget(profile, exMap);
   for (const slot of slots) {
     const ex = pickExercise(slot, ctx, ids, patterns);
     if (!ex) continue;
     const re: RoutineExercise = { uid: uid(), exerciseId: ex.id, ...scheme(profile.goal, ex, profile.level, profile.setsPref) };
-    if (out.length >= 3 && estimateMinutes([...out, re], exMap, ctx.pace) > planningBudget(profile)) break;
+    if (out.length >= Math.min(3, maxCount) && estimateMinutes([...out, re], exMap, ctx.pace) > budget) break;
     out.push(re);
     ids.add(ex.id);
     patterns.add(ex.pattern);
@@ -573,6 +596,7 @@ const MUSCLE_SLOTS: Record<Muscle, Slot[]> = {
   gluteos: [S('gluteos', 'c', ['empuje-cadera']), S('gluteos', 'a', ['abduccion', 'patada'])],
   pantorrillas: [S('pantorrillas', 'a')],
   core: [S('core', 'a', ['anti-extension']), S('core', 'a', ['flexion-tronco', 'elevacion-piernas']), S('core', 'a', ['rotacion', 'anti-rotacion'])],
+  cardio: [],
 };
 
 /** Huecos para un día armado a partir de los músculos elegidos (turnándose entre ellos). */
@@ -588,10 +612,11 @@ function slotsForFocus(focus: Muscle[]): Slot[] {
 export function fillDay(day: RoutineDay, others: RoutineDay[], exMap: ExMap, profile: Profile, favorites: string[], disliked: string[], pace = 1): RoutineExercise[] {
   const ctx = makeCtx(exMap, profile, favorites, disliked, others);
   ctx.pace = pace;
-  const keep = day.exercises;
+  const keep = day.exercises.filter((e) => !isCardio(e, exMap));
   for (const e of keep) ctx.used.set(e.exerciseId, 99);
-  const focus = day.focus.length ? day.focus : (['pecho', 'espalda', 'cuadriceps'] as Muscle[]);
-  return [...keep, ...buildFromSlots(slotsForFocus(focus), ctx, exMap)];
+  const focus = (day.focus.length ? day.focus : (['pecho', 'espalda', 'cuadriceps'] as Muscle[])).filter((m) => m !== 'cardio');
+  const cardio = day.exercises.find((e) => isCardio(e, exMap)) ?? cardioFor(profile, exMap);
+  return [...keep, ...buildFromSlots(slotsForFocus(focus), ctx, exMap), ...(cardio ? [cardio] : [])];
 }
 
 export function dayNameFromFocus(focus: Muscle[]): string {
@@ -625,7 +650,8 @@ export function generateRoutine(o: GenerateOptions): GenerateResult {
   const kept = o.current.filter((d) => d.mine || d.locked);
   const total = Math.max(o.days, kept.length, 1);
   const own = kept.find((d) => d.mine) ?? kept[0];
-  const style = o.style === 'auto' ? detectStyle(own, total, o.profile.level, o.exMap) : o.style;
+  const compact = (o.profile.exercisesPerDay ?? 99) <= 5;
+  const style = o.style === 'auto' ? detectStyle(own, total, o.profile.level, o.exMap, compact) : o.style;
   const keys = SPLITS[style][Math.min(total, 6)] ?? SPLITS[style][6];
   const templateKeys = Array.from({ length: total }, (_, i) => keys[i % keys.length]);
 
@@ -666,7 +692,14 @@ export function generateRoutine(o: GenerateOptions): GenerateResult {
       exercises: buildFromSlots(t.slots, ctx, o.exMap),
     };
   });
-  balanceRoutine(routine, new Set(routine.filter((d) => !keptIds.has(d.id)).map((d) => d.id)), o.exMap, { ...o.profile, daysPerWeek: o.days }, ctx);
+  const generated = new Set(routine.filter((d) => !keptIds.has(d.id)).map((d) => d.id));
+  balanceRoutine(routine, generated, o.exMap, { ...o.profile, daysPerWeek: o.days }, ctx);
+  // Cardio al final de cada día generado
+  for (const d of routine) {
+    if (!generated.has(d.id)) continue;
+    const c = cardioFor(o.profile, o.exMap);
+    if (c) d.exercises.push(c);
+  }
   return { routine, style };
 }
 
@@ -688,7 +721,7 @@ function balanceRoutine(routine: RoutineDay[], editable: Set<string>, exMap: ExM
     let worst: Muscle | null = null;
     let worstBy = 0;
     for (const m of MUSCLE_ORDER) {
-      if (m === 'antebrazos' || stuck.has(m)) continue;
+      if (m === 'antebrazos' || m === 'cardio' || stuck.has(m)) continue;
       let limit = t[m][1] * HIGH_TOLERANCE;
       // el pecho no debería superar mucho a la espalda (salud del hombro)
       if (m === 'pecho') limit = Math.min(limit, Math.max(vol.espalda * 1.4, t.pecho[0]));
@@ -727,8 +760,9 @@ function balanceRoutine(routine: RoutineDay[], editable: Set<string>, exMap: ExM
   // 2) Déficit: añadir un ejercicio al día más corto que encaje
   for (const m of MUSCLE_ORDER) {
     const vol = volumeOf(routine, exMap, factor);
-    if (m === 'antebrazos' || pending.has(m) || vol[m] >= t[m][0]) continue;
-    const days = routine.filter((d) => editable.has(d.id));
+    if (m === 'antebrazos' || m === 'cardio' || pending.has(m) || vol[m] >= t[m][0]) continue;
+    const cap = profile.exercisesPerDay ?? 99;
+    const days = routine.filter((d) => editable.has(d.id) && d.exercises.filter((e) => !isCardio(e, exMap)).length < cap);
     const withFocus = days.filter((d) => d.focus.includes(m));
     const day = [...(withFocus.length ? withFocus : days)].sort((a, b) => estimateMinutes(a.exercises, exMap) - estimateMinutes(b.exercises, exMap))[0];
     if (!day) continue;
@@ -738,10 +772,11 @@ function balanceRoutine(routine: RoutineDay[], editable: Set<string>, exMap: ExM
     const ex = pickExercise(slot, ctx, ids, patterns);
     if (!ex) continue;
     const re = { uid: uid(), exerciseId: ex.id, ...scheme(profile.goal, ex, profile.level, profile.setsPref) };
-    // solo si cabe en tu tiempo (con 3 series como mínimo útil)
-    if (estimateMinutes([...day.exercises, re], exMap, ctx.pace) > planningBudget(profile)) {
+    // solo si cabe en tu tiempo (con 2 series como mínimo útil)
+    const budget = strengthBudget(profile, exMap);
+    if (estimateMinutes([...day.exercises, re], exMap, ctx.pace) > budget) {
       re.sets = Math.min(re.sets, 2);
-      if (estimateMinutes([...day.exercises, re], exMap, ctx.pace) > planningBudget(profile)) continue;
+      if (estimateMinutes([...day.exercises, re], exMap, ctx.pace) > budget) continue;
     }
     day.exercises.push(re);
   }

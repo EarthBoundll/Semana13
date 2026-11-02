@@ -9,7 +9,8 @@ export type Muscle =
   | 'isquios'
   | 'gluteos'
   | 'pantorrillas'
-  | 'core';
+  | 'core'
+  | 'cardio';
 
 export type Equipment = 'barra' | 'mancuernas' | 'maquina' | 'polea' | 'corporal' | 'kettlebell' | 'banda';
 export type Kind = 'compuesto' | 'aislamiento';
@@ -30,8 +31,8 @@ export interface Exercise {
   /** Patrón de movimiento: sirve para encontrar sustitutos parecidos */
   pattern: string;
   tip: string;
-  /** 'seg' para ejercicios por tiempo (plancha, etc.) */
-  unit?: 'reps' | 'seg';
+  /** 'seg' para ejercicios por tiempo (plancha…), 'min' para cardio (caminadora…) */
+  unit?: 'reps' | 'seg' | 'min';
   custom?: boolean;
 }
 
@@ -70,6 +71,13 @@ export interface Profile {
   /** Hora límite para terminar "HH:MM" (opcional) */
   gymEnd: string | null;
   daysPerWeek: number;
+  /** Días habituales de gym (0 = lunes … 6 = domingo); null = automático */
+  weekDays: number[] | null;
+  /** Ejercicios por día (sin contar el cardio); null = según el tiempo */
+  exercisesPerDay: number | null;
+  /** Cardio al final de cada día */
+  cardioId: string | null;
+  cardioMin: number;
   /** null = automático según objetivo */
   setsPref: number | null;
   style: SplitStyle;
@@ -130,4 +138,10 @@ export interface AppState {
   customExercises: Exercise[];
   favorites: string[];
   disliked: string[];
+  /** Enlaces de video elegidos por el usuario (id de ejercicio -> URL) */
+  videos: Record<string, string>;
+  /** Semanas (lunes) que ya se planificaron solas con la semana habitual */
+  autoWeeks: string[];
+  /** Avisos de la pantalla de inicio que el usuario ya cerró */
+  dismissed: string[];
 }

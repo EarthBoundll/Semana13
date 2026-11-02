@@ -35,9 +35,24 @@ export function routineInsights(s: AppState, exMap: ExMap): Insight[] {
     });
   }
 
+  const compact = (s.profile.exercisesPerDay ?? 99) <= 5;
+  // Con pocos ejercicios por día solo se muestran los 3 músculos más cortos
+  const lows = MUSCLE_ORDER.filter((m) => m !== 'antebrazos' && m !== 'cardio' && !pending.has(m) && statusOf(vol[m], t[m]) === 'bajo').sort(
+    (x, y) => vol[x] / t[x][0] - vol[y] / t[y][0],
+  );
+  const shownLows = new Set(compact ? lows.slice(0, 3) : lows);
+  if (compact && lows.length) {
+    out.push({
+      id: 'compact',
+      tone: 'info',
+      text: `Con ${s.profile.exercisesPerDay} ejercicios por día no se llega al volumen ideal de todos los músculos; por eso tu rutina prioriza ejercicios multiarticulares que trabajan varios a la vez.`,
+    });
+  }
+
   for (const m of MUSCLE_ORDER) {
-    if (m === 'antebrazos' || pending.has(m)) continue;
+    if (m === 'antebrazos' || m === 'cardio' || pending.has(m)) continue;
     const st = statusOf(vol[m], t[m]);
+    if (st === 'bajo' && !shownLows.has(m)) continue;
     if (st === 'bajo') {
       out.push({
         id: `low-${m}`,
@@ -80,7 +95,7 @@ export function routineInsights(s: AppState, exMap: ExMap): Insight[] {
     }
   }
 
-  if (!out.some((i) => i.tone !== 'good' && i.id !== 'empty') && !empty.length) {
+  if (!out.some((i) => i.tone !== 'good' && i.id !== 'empty' && i.id !== 'compact') && !empty.length) {
     out.push({ id: 'ok', tone: 'good', text: 'Tu rutina está equilibrada: todos los músculos están en su rango recomendado.' });
   }
   return out;
