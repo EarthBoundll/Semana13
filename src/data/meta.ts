@@ -74,3 +74,34 @@ export function fmtRest(sec: number): string {
   const s = sec % 60;
   return s ? `${m}:${String(s).padStart(2, '0')} min` : `${m} min`;
 }
+
+/** Máquinas concretas. `photo` es un ejercicio cuya foto muestra la máquina. */
+export const MACHINES: { id: string; label: string; group: 'Pierna' | 'Torso' | 'Cardio'; photo: string }[] = [
+  { id: 'prensa', label: 'Prensa de piernas', group: 'Pierna', photo: 'prensa' },
+  { id: 'hack', label: 'Sentadilla hack', group: 'Pierna', photo: 'hack' },
+  { id: 'extension', label: 'Extensión de cuádriceps (leg extension)', group: 'Pierna', photo: 'extension-cuadriceps' },
+  { id: 'curl-tumbado', label: 'Curl femoral acostado (leg curl)', group: 'Pierna', photo: 'curl-femoral-tumbado' },
+  { id: 'curl-sentado', label: 'Curl femoral sentado', group: 'Pierna', photo: 'curl-femoral-sentado' },
+  { id: 'smith', label: 'Smith (multipower)', group: 'Pierna', photo: 'sentadilla-smith' },
+  { id: 'abductor', label: 'Abductor de cadera', group: 'Pierna', photo: 'abduccion-maquina' },
+  { id: 'hip-thrust', label: 'Máquina de hip thrust', group: 'Pierna', photo: 'hip-thrust-maquina' },
+  { id: 'pantorrilla', label: 'Pantorrilla de pie', group: 'Pierna', photo: 'talones-pie' },
+  { id: 'pantorrilla-sentado', label: 'Pantorrilla sentado', group: 'Pierna', photo: 'talones-sentado' },
+  { id: 'press-pecho', label: 'Press de pecho', group: 'Torso', photo: 'press-pecho-maquina' },
+  { id: 'pec-deck', label: 'Pec deck (contractor)', group: 'Torso', photo: 'pec-deck' },
+  { id: 'remo-maquina', label: 'Remo en máquina', group: 'Torso', photo: 'remo-maquina' },
+  { id: 'press-hombro', label: 'Press de hombro', group: 'Torso', photo: 'press-hombro-maquina' },
+  { id: 'laterales', label: 'Elevaciones laterales', group: 'Torso', photo: 'laterales-maquina' },
+  { id: 'asistida', label: 'Dominadas / fondos asistidos', group: 'Torso', photo: 'fondos-maquina' },
+  { id: 'scott', label: 'Banco Scott (curl predicador)', group: 'Torso', photo: 'curl-predicador' },
+  { id: 'crunch-maquina', label: 'Máquina de abdominales', group: 'Torso', photo: 'crunch-maquina' },
+  { id: 'caminadora', label: 'Caminadora', group: 'Cardio', photo: 'caminadora' },
+  { id: 'bicicleta', label: 'Bicicleta estática', group: 'Cardio', photo: 'bicicleta' },
+  { id: 'eliptica', label: 'Elíptica', group: 'Cardio', photo: 'eliptica' },
+  { id: 'escaladora', label: 'Escaladora', group: 'Cardio', photo: 'escaladora' },
+  { id: 'remo-ergometro', label: 'Máquina de remo', group: 'Cardio', photo: 'remo-ergometro' },
+];
+
+/** Tu equipo: polea, mancuernas, barra, caminadora y las máquinas de pierna que usas */
+export const MY_EQUIPMENT: Equipment[] = ['barra', 'mancuernas', 'polea', 'maquina'];
+export const MY_MACHINES = ['prensa', 'hack', 'extension', 'curl-tumbado', 'caminadora'];

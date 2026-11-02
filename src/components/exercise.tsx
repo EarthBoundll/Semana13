@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { BANK } from '../data/exercises';
-import { EQUIPMENT, EQUIPMENT_ORDER, MUSCLE_ORDER, MUSCLES } from '../data/meta';
+import { EQUIPMENT, EQUIPMENT_ORDER, MACHINES, MUSCLE_ORDER, MUSCLES } from '../data/meta';
 import { fmtDate, fromKey } from '../lib/dates';
+import { isAvailable } from '../lib/equipment';
 import { alternativesFor } from '../lib/generator';
 import { e1rmSeries, fmtKg, history } from '../lib/progression';
 import { mutate, uid, useAppState, useExMap } from '../lib/store';
@@ -107,12 +108,11 @@ export function ExercisePicker({
   const [creating, setCreating] = useState(false);
 
   const alts = useMemo(
-    () => (base ? alternativesFor(base.id, exMap, s.profile, s.favorites, s.disliked, excludeIds).slice(0, 5) : []),
+    () => (base ? alternativesFor(base.id, exMap, s.profile, s.favorites, s.disliked, excludeIds).filter((a) => isAvailable(a.ex, s.profile)).slice(0, 5) : []),
     [base, exMap, s.profile, s.favorites, s.disliked, excludeIds],
   );
 
   const list = useMemo(() => {
-    const equip = new Set(s.profile.equipment);
     const excl = new Set(excludeIds);
     const needle = q
       .trim()
@@ -122,10 +122,10 @@ export function ExercisePicker({
     return [...exMap.values()]
       .filter((e) => !excl.has(e.id) && e.id !== baseId)
       .filter((e) => (muscle === 'todos' ? true : muscle === 'foco' ? focus?.includes(e.primary) : e.primary === muscle))
-      .filter((e) => !onlyMine || equip.has(e.equipment))
+      .filter((e) => !onlyMine || isAvailable(e, s.profile))
       .filter((e) => !needle || e.name.toLowerCase().normalize('NFD').replace(/\p{Diacritic}/gu, '').includes(needle))
       .sort((a, b) => MUSCLE_ORDER.indexOf(a.primary) - MUSCLE_ORDER.indexOf(b.primary) || Number(s.favorites.includes(b.id)) - Number(s.favorites.includes(a.id)) || a.name.localeCompare(b.name));
-  }, [exMap, q, muscle, onlyMine, excludeIds, baseId, focus, s.profile.equipment, s.favorites]);
+  }, [exMap, q, muscle, onlyMine, excludeIds, baseId, focus, s.profile, s.favorites]);
 
   const close = () => {
     setSel([]);
@@ -224,7 +224,7 @@ export function ExercisePicker({
           <div className="row-between">
             <label className="check-line">
               <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />
-              Solo con mi equipo
+              Solo lo que hay en mi gym
             </label>
             <button className="btn ghost sm" onClick={() => setCreating(true)}>
               <Icon name="plus" size={16} /> Crear ejercicio
@@ -376,7 +376,10 @@ export function ExerciseDetail({ id, onClose, onOpen }: { id: string | null; onC
   const ex = id ? exMap.get(id) : undefined;
   const series = useMemo(() => (ex ? e1rmSeries(s.logs, ex.id) : []), [ex, s.logs]);
   const past = useMemo(() => (ex ? history(s.logs, ex.id, 5) : []), [ex, s.logs]);
-  const alts = useMemo(() => (ex ? alternativesFor(ex.id, exMap, s.profile, s.favorites, s.disliked).slice(0, 4) : []), [ex, exMap, s.profile, s.favorites, s.disliked]);
+  const alts = useMemo(
+    () => (ex ? alternativesFor(ex.id, exMap, s.profile, s.favorites, s.disliked).filter((a) => isAvailable(a.ex, s.profile)).slice(0, 4) : []),
+    [ex, exMap, s.profile, s.favorites, s.disliked],
+  );
   if (!ex) return null;
   const fav = s.favorites.includes(ex.id);
   const bad = s.disliked.includes(ex.id);
@@ -408,8 +411,15 @@ export function ExerciseDetail({ id, onClose, onOpen }: { id: string | null; onC
         ))}
       </div>
       <p className="muted small">
-        {EQUIPMENT[ex.equipment]} · {ex.kind === 'compuesto' ? 'Multiarticular' : 'Aislado'} · Dificultad <LevelDots level={ex.level} />
+        {EQUIPMENT[ex.equipment]}
+        {ex.machine ? ` (${MACHINES.find((m) => m.id === ex.machine)?.label ?? ex.machine})` : ''} · {ex.kind === 'compuesto' ? 'Multiarticular' : 'Aislado'} · Dificultad{' '}
+        <LevelDots level={ex.level} />
       </p>
+      {!isAvailable(ex, s.profile) && (
+        <p className="callout warn">
+          <Icon name="alert" size={16} /> Según tus ajustes no tienes este equipo en tu gym. Si sí lo tienes, márcalo en Ajustes → Equipo.
+        </p>
+      )}
       <div className="tip">
         <Icon name="info" size={18} />
         <p>{ex.tip}</p>

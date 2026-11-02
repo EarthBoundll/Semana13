@@ -2,8 +2,10 @@ import { useEffect, useRef, useState } from 'react';
 import { Icon } from '../components/Icon';
 import { Chip, PageHeader, Segmented, toast } from '../components/ui';
 import { CARDIO } from '../data/exercises';
-import { EQUIPMENT, EQUIPMENT_ORDER, GOALS, LEVELS, STYLES } from '../data/meta';
-import { applyCardioToRoutine, regenerate } from '../lib/actions';
+import { EQUIPMENT, EQUIPMENT_ORDER, GOALS, LEVELS, MACHINES, STYLES } from '../data/meta';
+import { applyCardioToRoutine, regenerate, replaceUnavailable } from '../lib/actions';
+import { isAvailable } from '../lib/equipment';
+import { Thumb } from '../components/media';
 import { DOW_LONG, DOW_SHORT, todayKey, weekStart } from '../lib/dates';
 import { applyHabitualWeek, habitualDays } from '../lib/plan';
 import { applyTheme, buildExMap, getState, initialState, mutate, normalize, setState, useAppState } from '../lib/store';
@@ -71,7 +73,10 @@ export function Settings() {
   };
 
   const days = habitualDays(p);
-  const cardioOptions = [...CARDIO, ...s.customExercises.filter((e) => e.unit === 'min')];
+  const exMap = buildExMap(s.customExercises);
+  const available = [...exMap.values()].filter((e) => isAvailable(e, p)).length;
+  const unavailable = s.routine.reduce((n, d) => n + d.exercises.filter((re) => { const e = exMap.get(re.exerciseId); return e && !isAvailable(e, p); }).length, 0);
+  const cardioOptions = [...CARDIO, ...s.customExercises.filter((e) => e.unit === 'min')].filter((c) => isAvailable(c, p) || c.id === p.cardioId);
 
   const toggleDay = (i: number) => {
     const next = days.includes(i) ? days.filter((d) => d !== i) : [...days, i].sort((a, b) => a - b);
@@ -277,8 +282,15 @@ export function Settings() {
           <span>Series por ejercicio al generar</span>
           <Segmented label="Series" value={p.setsPref ?? 0} onChange={(v) => set('setsPref', v || null)} options={[0, 2, 3, 4, 5].map((n) => ({ value: n, label: n ? String(n) : 'Auto' }))} />
         </div>
+        <p className="muted small">Los cambios de objetivo, nivel o series se aplican la próxima vez que rehagas la rutina.</p>
+      </section>
+
+      <section className="card form-card" id="equipo">
+        <h3 className="card-title">
+          <Icon name="dumbbell" size={18} /> Equipo de mi gym
+        </h3>
         <div className="field">
-          <span>Equipo disponible</span>
+          <span>Lo que uso</span>
           <div className="chips">
             {EQUIPMENT_ORDER.map((q) => (
               <Chip key={q} on={p.equipment.includes(q)} onClick={() => set('equipment', p.equipment.includes(q) ? p.equipment.filter((x) => x !== q) : [...p.equipment, q])}>
@@ -287,7 +299,53 @@ export function Settings() {
             ))}
           </div>
         </div>
-        <p className="muted small">Los cambios de objetivo, nivel, series o equipo se aplican la próxima vez que generes la rutina.</p>
+        {p.equipment.includes('maquina') && (
+          <div className="field">
+            <span>¿Qué máquinas hay? Mira las fotos y marca las que veas en tu gym</span>
+            {(['Pierna', 'Torso', 'Cardio'] as const).map((g) => (
+              <div key={g} className="machine-group">
+                <small className="section-label">{g}</small>
+                <div className="machine-grid">
+                  {MACHINES.filter((m) => m.group === g).map((m) => {
+                    const on = !p.machines || p.machines.includes(m.id);
+                    return (
+                      <button
+                        key={m.id}
+                        type="button"
+                        className={`machine ${on ? 'on' : ''}`}
+                        aria-pressed={on}
+                        onClick={() => {
+                          const cur = p.machines ?? MACHINES.map((x) => x.id);
+                          set('machines', on ? cur.filter((x) => x !== m.id) : [...cur, m.id]);
+                        }}
+                      >
+                        <Thumb id={m.photo} size={56} />
+                        <span>{m.label}</span>
+                        <span className={`checkbox ${on ? 'on' : ''}`}>{on && <Icon name="check" size={14} />}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+        <p className="muted small">
+          Con tu equipo puedes hacer <strong>{available}</strong> de {exMap.size} ejercicios del banco. Nunca te sugeriré algo que no puedas hacer.
+        </p>
+        {unavailable > 0 && (
+          <div className="btn-row wrap">
+            <button
+              className="btn primary"
+              onClick={() => {
+                const n = replaceUnavailable();
+                toast(n ? `Cambié ${n} ejercicio${n > 1 ? 's' : ''} por otros con tu equipo` : 'Tu rutina ya usa solo tu equipo');
+              }}
+            >
+              <Icon name="swap" size={18} /> Cambiar los {unavailable} ejercicios de mi rutina que no puedo hacer
+            </button>
+          </div>
+        )}
       </section>
 
       <section className="card form-card">

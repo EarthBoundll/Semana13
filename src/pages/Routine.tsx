@@ -9,6 +9,7 @@ import { routineInsights, statusOf, targets, weeklyVolume } from '../lib/analysi
 import { bestForMuscle, dayNameFromFocus, detectStyle, estimateMinutes, exerciseMinutes, fillDay, generateRoutine, mainMuscles, scheme, suggestionsForDay, totalSets } from '../lib/generator';
 import { fitRoutineDay, fmtHHMM, paceFactor, parseHHMM, planningBudget, scheduleMinutes } from '../lib/timing';
 import { remapFuturePlan } from '../lib/actions';
+import { isAvailable } from '../lib/equipment';
 import { peekPendingDay, setPendingDay } from '../nav';
 import { getState, mutate, uid, useAppState, useExMap } from '../lib/store';
 import type { Muscle, RoutineDay, RoutineExercise, SplitStyle } from '../types';
@@ -288,6 +289,11 @@ export function Routine() {
                         {ex && (
                           <small className="muted">
                             {exMeta(ex)} · ≈ {exerciseMinutes(re, exMap, pace)} min
+                          </small>
+                        )}
+                        {ex && !isAvailable(ex, s.profile) && (
+                          <small className="not-available">
+                            <Icon name="alert" size={12} /> No está en tu gym: toca “Cambiar”
                           </small>
                         )}
                       </button>

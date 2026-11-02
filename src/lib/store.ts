@@ -1,9 +1,11 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import { BANK } from '../data/exercises';
-import { EQUIPMENT_ORDER } from '../data/meta';
+import { MY_EQUIPMENT, MY_MACHINES } from '../data/meta';
 import type { AppState, Exercise, Profile } from '../types';
 
 const KEY = 'gymplan:v1';
+/** Sube cuando hay que ajustar una sola vez los datos ya guardados */
+const CURRENT_REV = 2;
 
 export const defaultProfile: Profile = {
   name: '',
@@ -11,7 +13,8 @@ export const defaultProfile: Profile = {
   goalWeight: null,
   goal: 'hipertrofia',
   level: 'intermedio',
-  equipment: [...EQUIPMENT_ORDER],
+  equipment: [...MY_EQUIPMENT],
+  machines: [...MY_MACHINES],
   sessionMinutes: 70,
   gymStart: '06:00',
   gymEnd: '07:10',
@@ -28,6 +31,7 @@ export const defaultProfile: Profile = {
 export function initialState(): AppState {
   return {
     version: 1,
+    rev: CURRENT_REV,
     onboarded: false,
     profile: { ...defaultProfile },
     routine: [],
@@ -51,8 +55,9 @@ export function normalize(raw: unknown): AppState {
   const base = initialState();
   if (!raw || typeof raw !== 'object') return base;
   const x = raw as Partial<AppState>;
-  return {
+  const out: AppState = {
     ...base,
+    rev: x.rev ?? 1,
     onboarded: Boolean(x.onboarded),
     profile: { ...base.profile, ...(x.profile ?? {}) },
     routine: arr(x.routine),
@@ -67,6 +72,14 @@ export function normalize(raw: unknown): AppState {
     autoWeeks: arr(x.autoWeeks),
     dismissed: arr(x.dismissed),
   };
+  // rev 2: tu gym tiene polea, mancuernas, barra, caminadora y máquinas de pierna concretas
+  if ((out.rev ?? 1) < 2) {
+    out.profile.equipment = [...MY_EQUIPMENT];
+    out.profile.machines = [...MY_MACHINES];
+    if (out.onboarded) out.dismissed = out.dismissed.filter((d) => d !== 'equipo-v2');
+    out.rev = 2;
+  }
+  return out;
 }
 
 function load(): AppState {

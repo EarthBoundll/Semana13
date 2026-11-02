@@ -1,6 +1,7 @@
 import { LOWER, MUSCLE_ORDER, MUSCLES, UPPER } from '../data/meta';
 import type { Exercise, Goal, Kind, Level, Muscle, Profile, RoutineDay, RoutineExercise, SplitStyle } from '../types';
 import { uid, type ExMap } from './store';
+import { isAvailable } from './equipment';
 import { blockSec, planningBudget, WARMUP_MIN } from './timing';
 import { HIGH_TOLERANCE, targets, volumeOf } from './volume';
 
@@ -268,7 +269,7 @@ const T: Record<string, DayTemplate> = {
       S('isquios', 'c', ['bisagra']),
       S('pecho', 'c', ['press-inclinado']),
       S('espalda', 'c', ['jalon-vertical']),
-      S('cuadriceps', 'c', ['zancada']),
+      S('cuadriceps', 'c', ['prensa', 'zancada']),
       S('hombros', 'a', ['elevacion-lateral']),
       S('core', 'a'),
       S('biceps', 'a', ['curl-martillo']),
@@ -516,6 +517,8 @@ function scoreFor(e: Exercise, slot: Slot, ctx: PickCtx, dayPatterns: Set<string
     if (e.level === 3) s -= profile.level === 'intermedio' ? 3 : 0.5;
   }
   if (e.equipment === 'kettlebell' && (profile.equipment.includes('barra') || profile.equipment.includes('mancuernas'))) s -= 1;
+  // Las máquinas que marcaste como tuyas se usan con gusto
+  if (e.machine && profile.machines?.includes(e.machine) && e.unit !== 'min') s += 2;
   // En un gym equipado, los aislados con peso corporal quedan como alternativa
   if (e.kind === 'aislamiento' && e.equipment === 'corporal' && e.primary !== 'core' && (profile.equipment.includes('maquina') || profile.equipment.includes('polea'))) s -= 1;
   if (e.custom) s += 0.5;
@@ -523,12 +526,8 @@ function scoreFor(e: Exercise, slot: Slot, ctx: PickCtx, dayPatterns: Set<string
 }
 
 export function pickExercise(slot: Slot, ctx: PickCtx, dayIds: Set<string>, dayPatterns: Set<string> = new Set()): Exercise | null {
-  const equip = new Set(ctx.profile.equipment);
-  const base = ctx.bank.filter((e) => e.primary === slot.m && !dayIds.has(e.id) && !ctx.disliked.has(e.id));
-  const tiers = [
-    base.filter((e) => equip.has(e.equipment) && e.level <= MAX_LEVEL[ctx.profile.level]),
-    base.filter((e) => equip.has(e.equipment)),
-  ];
+  const base = ctx.bank.filter((e) => e.primary === slot.m && !dayIds.has(e.id) && !ctx.disliked.has(e.id) && isAvailable(e, ctx.profile));
+  const tiers = [base.filter((e) => e.level <= MAX_LEVEL[ctx.profile.level]), base];
   for (const list of tiers) {
     if (!list.length) continue;
     let best: Exercise | null = null;
@@ -808,7 +807,7 @@ export function alternativesFor(baseId: string, exMap: ExMap, profile: Profile, 
     }
     if (e.kind === base.kind) score += 3;
     score += e.secondary.filter((m) => base.secondary.includes(m)).length;
-    if (equip.has(e.equipment)) score += 2;
+    if (isAvailable(e, profile)) score += 2;
     else score -= 6;
     const fullGym = equip.has('maquina') || equip.has('barra');
     if (fullGym && e.equipment === 'banda') score -= 2;

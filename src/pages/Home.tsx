@@ -10,6 +10,8 @@ import { dayById, dayLetter, nextDayIdFor, streak, weekStats } from '../lib/plan
 import { fmtKg, logSetsDone, logVolume } from '../lib/progression';
 import { mutate, useAppState, useExMap } from '../lib/store';
 import { startWorkout } from '../lib/workout';
+import { countUnavailable, regenerate, replaceUnavailable } from '../lib/actions';
+import { toast } from '../components/ui';
 import { Thumb } from '../components/media';
 import { habitualDays } from '../lib/plan';
 import { isIOS, isStandalone, promptInstall, useCanInstall } from '../lib/install';
@@ -94,6 +96,7 @@ export function Home() {
       <PageHeader title={hello} subtitle={fmtLong(today)} />
 
       {!s.dismissed.includes('welcome') && <WelcomeCard />}
+      <EquipmentCard />
       <InstallCard />
 
       {s.active && (
@@ -444,4 +447,45 @@ function dayCountText(items: { ex?: { unit?: string; name: string }; min: number
   const strength = items.filter((i) => i.ex?.unit !== 'min').length;
   const cardio = items.find((i) => i.ex?.unit === 'min');
   return `${strength} ejercicio${strength === 1 ? '' : 's'}${cardio ? ` + ${cardio.min} min de ${cardio.ex!.name.split(' (')[0].toLowerCase()}` : ''}`;
+}
+
+function EquipmentCard() {
+  const s = useAppState();
+  const { go } = useNav();
+  const n = countUnavailable(s);
+  if (!n || s.dismissed.includes('equipo-v2')) return null;
+  return (
+    <section className="card welcome">
+      <h3 className="card-title">
+        <Icon name="dumbbell" size={18} /> Ajusté la app a tu gym
+      </h3>
+      <p className="small">
+        Ahora sé que usas polea, mancuernas, barra, caminadora y las máquinas de pierna (prensa, hack, extensión y curl femoral acostado). Tu rutina tiene <strong>{n}</strong>{' '}
+        ejercicio{n > 1 ? 's' : ''} con equipo que no usas.
+      </p>
+      <div className="btn-row wrap">
+        <button
+          className="btn primary"
+          onClick={() => {
+            const c = replaceUnavailable();
+            toast(`Cambié ${c} ejercicio${c === 1 ? '' : 's'} por otros con tu equipo`);
+          }}
+        >
+          <Icon name="swap" size={16} /> Cambiarlos por otros
+        </button>
+        <button
+          className="btn secondary"
+          onClick={() => {
+            regenerate();
+            toast('Rutina rehecha con tu equipo');
+          }}
+        >
+          Rehacer toda la rutina
+        </button>
+        <button className="btn ghost" onClick={() => go('ajustes')}>
+          Revisar mi equipo
+        </button>
+      </div>
+    </section>
+  );
 }

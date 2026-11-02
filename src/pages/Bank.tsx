@@ -3,6 +3,7 @@ import { CustomExerciseSheet, ExerciseDetail, ExerciseRow } from '../components/
 import { Icon } from '../components/Icon';
 import { Chip, PageHeader } from '../components/ui';
 import { EQUIPMENT, EQUIPMENT_ORDER, MUSCLE_ORDER, MUSCLES } from '../data/meta';
+import { isAvailable } from '../lib/equipment';
 import { useAppState, useExMap } from '../lib/store';
 import type { Equipment, Muscle } from '../types';
 
@@ -21,6 +22,7 @@ export function Bank() {
   const [filter, setFilter] = useState<'todos' | 'fav' | 'no' | 'mios'>('todos');
   const [detail, setDetail] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [onlyMine, setOnlyMine] = useState(true);
 
   const inRoutine = useMemo(() => new Set(s.routine.flatMap((d) => d.exercises.map((e) => e.exerciseId))), [s.routine]);
 
@@ -30,10 +32,11 @@ export function Bank() {
       (e) =>
         (muscle === 'todos' || e.primary === muscle) &&
         (equip === 'todos' || e.equipment === equip) &&
+        (!onlyMine || isAvailable(e, s.profile)) &&
         (filter === 'todos' || (filter === 'fav' && s.favorites.includes(e.id)) || (filter === 'no' && s.disliked.includes(e.id)) || (filter === 'mios' && e.custom)) &&
         (!needle || norm(e.name).includes(needle)),
     );
-  }, [exMap, q, muscle, equip, filter, s.favorites, s.disliked]);
+  }, [exMap, q, muscle, equip, filter, s.favorites, s.disliked, onlyMine, s.profile]);
 
   const groups = MUSCLE_ORDER.map((m) => ({ m, items: list.filter((e) => e.primary === m).sort((a, b) => a.name.localeCompare(b.name)) })).filter((g) => g.items.length);
 
@@ -82,6 +85,10 @@ export function Bank() {
           <Icon name="plus" size={18} /> Crear ejercicio
         </button>
       </div>
+      <label className="check-line">
+        <input type="checkbox" checked={onlyMine} onChange={(e) => setOnlyMine(e.target.checked)} />
+        Solo lo que hay en mi gym ({[...exMap.values()].filter((e) => isAvailable(e, s.profile)).length} ejercicios)
+      </label>
 
       {groups.map((g) => (
         <section key={g.m} className="bank-group">

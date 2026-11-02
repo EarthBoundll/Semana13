@@ -18,7 +18,9 @@ Web para planificar y registrar tus días de gimnasio. Hecha con React + Vite y 
   trabaja y arma los demás días alrededor de él para que no se repitan músculos. Ese día no cambia al regenerar.
 - **Tú eliges las series**: series, rango de repeticiones y descanso de cada ejercicio. También hay un botón
   "series para todos" y una preferencia general (Auto, 2, 3, 4 o 5).
-- **Banco de más de 120 ejercicios** con técnica, dificultad y equipo. Con "Cambiar" ves los mejores
+- **Equipo de tu gym**: marcas lo que usas (polea, mancuernas, barra) y qué máquinas hay, viendo sus fotos.
+  La app solo sugiere ejercicios que puedes hacer y cambia sola los que no.
+- **Banco de más de 200 ejercicios** con técnica, dificultad y equipo. Con "Cambiar" ves los mejores
   reemplazos (mismo movimiento, otro equipo…). Si marcas "No me gusta", no se vuelve a sugerir.
   Puedes marcar favoritos y crear tus propios ejercicios.
 - **Análisis de la rutina**: series por semana de cada músculo frente al rango recomendado, equilibrio entre

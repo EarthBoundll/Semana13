@@ -33,6 +33,8 @@ export interface Exercise {
   tip: string;
   /** 'seg' para ejercicios por tiempo (plancha…), 'min' para cardio (caminadora…) */
   unit?: 'reps' | 'seg' | 'min';
+  /** Máquina concreta (solo si equipment = 'maquina'): prensa, hack, extension… */
+  machine?: string;
   custom?: boolean;
 }
 
@@ -65,6 +67,8 @@ export interface Profile {
   goal: Goal;
   level: Level;
   equipment: Equipment[];
+  /** Máquinas que hay en tu gym; null = todas */
+  machines: string[] | null;
   sessionMinutes: number;
   /** Hora de llegada al gym "HH:MM" (opcional) */
   gymStart: string | null;
@@ -127,6 +131,8 @@ export interface WeightEntry {
 
 export interface AppState {
   version: 1;
+  /** Revisión de los datos guardados (para ajustes de una sola vez) */
+  rev?: number;
   onboarded: boolean;
   profile: Profile;
   routine: RoutineDay[];

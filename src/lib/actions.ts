@@ -1,6 +1,7 @@
 import type { AppState, Profile, SplitStyle } from '../types';
 import { todayKey } from './dates';
-import { cardioFor, generateRoutine } from './generator';
+import { isAvailable } from './equipment';
+import { alternativesFor, cardioFor, generateRoutine } from './generator';
 import { assignRotation, autoPlanCurrentWeek } from './plan';
 import { buildExMap, mutate } from './store';
 import { paceFactor } from './timing';
@@ -83,4 +84,39 @@ export async function requestPersistentStorage(): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Cambia los ejercicios de tu rutina que no puedes hacer con tu equipo por el mejor reemplazo. */
+export function replaceUnavailable(): number {
+  let changed = 0;
+  mutate((s) => {
+    const exMap = buildExMap(s.customExercises);
+    for (const d of s.routine) {
+      const used = new Set(d.exercises.map((e) => e.exerciseId));
+      for (const re of d.exercises) {
+        const ex = exMap.get(re.exerciseId);
+        if (!ex || isAvailable(ex, s.profile)) continue;
+        const alt = alternativesFor(ex.id, exMap, s.profile, s.favorites, s.disliked, [...used]).find((a) => isAvailable(a.ex, s.profile));
+        if (!alt) continue;
+        used.delete(re.exerciseId);
+        re.exerciseId = alt.ex.id;
+        used.add(alt.ex.id);
+        if (alt.ex.unit === 'min' && ex.unit !== 'min') Object.assign(re, { sets: 1, repsMin: s.profile.cardioMin || 15, repsMax: s.profile.cardioMin || 15, rest: 0 });
+        changed++;
+      }
+    }
+    if (s.profile.cardioId) {
+      const c = exMap.get(s.profile.cardioId);
+      if (c && !isAvailable(c, s.profile)) s.profile.cardioId = 'caminadora';
+    }
+  });
+  return changed;
+}
+
+export function countUnavailable(s: AppState): number {
+  const exMap = buildExMap(s.customExercises);
+  return s.routine.reduce((n, d) => n + d.exercises.filter((re) => {
+    const e = exMap.get(re.exerciseId);
+    return e && !isAvailable(e, s.profile);
+  }).length, 0);
 }
