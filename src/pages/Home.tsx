@@ -5,6 +5,7 @@ import { MUSCLES } from '../data/meta';
 import { routineInsights } from '../lib/analysis';
 import { addDays, DOW_LONG, DOW_SHORT, dowIndex, fmtDate, fmtDuration, fmtLong, fromKey, monthKey, todayKey, weekDays, weekStart } from '../lib/dates';
 import { estimateMinutes, mainMuscles } from '../lib/generator';
+import { atTime, fmtClock, hasSchedule, paceFactor } from '../lib/timing';
 import { dayById, dayLetter, nextDayIdFor, streak, weekStats } from '../lib/plan';
 import { fmtKg, logSetsDone, logVolume } from '../lib/progression';
 import { mutate, useAppState, useExMap } from '../lib/store';
@@ -35,6 +36,27 @@ export function Home() {
     startWorkout(id);
     go('entrenar');
   };
+  const pace = useMemo(() => paceFactor(s.logs, exMap), [s.logs, exMap]);
+
+  /** "Si empiezas a las 6:00 terminas ~6:58 (límite 7:10)" */
+  const finishLine = (mins: number) => {
+    if (!hasSchedule(s.profile) || !s.profile.gymStart || !s.profile.gymEnd) return null;
+    const now = Date.now();
+    const st = atTime(s.profile.gymStart, new Date());
+    const end = atTime(s.profile.gymEnd, new Date());
+    const base = now > st && now < end ? now : st;
+    const fin = base + mins * 60000;
+    const ok = fin <= end;
+    return (
+      <p className={`pace-line ${ok ? 'ok' : 'late'}`}>
+        <Icon name={ok ? 'timer' : 'alert'} size={16} />
+        <span>
+          {base === now ? 'Si empiezas ahora' : `Si empiezas a las ${fmtClock(base)}`} terminas ~{fmtClock(fin)} (límite {fmtClock(end)}).
+          {!ok && ' No te alcanza: ajusta este día en Rutina.'}
+        </span>
+      </p>
+    );
+  };
 
   // ── Estadísticas
   const monthCount = s.logs.filter((l) => monthKey(l.date) === monthKey(today)).length;
@@ -48,7 +70,8 @@ export function Home() {
 
   // ── Consejos inteligentes
   const tips = useMemo(() => {
-    const out: { text: string; route: Route; cta: string; icon: 'alert' | 'spark' | 'scale' | 'calendar' }[] = [];
+    const out: { text: string; route: Route; cta: string; icon: 'alert' | 'spark' | 'scale' | 'calendar' | 'timer' }[] = [];
+    if (!hasSchedule(s.profile)) out.push({ text: '¿Tienes una hora límite para irte? Configura tu horario y te mido el tiempo de cada ejercicio.', route: 'ajustes', cta: 'Poner mi horario', icon: 'timer' });
     const mine = s.routine.find((d) => d.mine && !d.exercises.length);
     if (mine) out.push({ text: `Agrega los ejercicios de tu día «${mine.name}» para que lo registre y lo tenga en cuenta.`, route: 'rutina', cta: 'Ir a mi rutina', icon: 'spark' });
     const plannedThisWeek = week.some((d) => s.plan[d]);
@@ -102,8 +125,9 @@ export function Home() {
                 .slice(0, 4)
                 .map((m) => MUSCLES[m].label.split(' ')[0])
                 .join(' · ')}
-              {plannedDay.exercises.length > 0 && ` — ${plannedDay.exercises.length} ejercicios · ~${estimateMinutes(plannedDay.exercises, exMap)} min`}
+              {plannedDay.exercises.length > 0 && ` — ${plannedDay.exercises.length} ejercicios · ~${estimateMinutes(plannedDay.exercises, exMap, pace)} min`}
             </p>
+            {plannedDay.exercises.length > 0 && finishLine(estimateMinutes(plannedDay.exercises, exMap, pace))}
             {plannedDay.exercises.length ? (
               <ol className="mini-list">
                 {plannedDay.exercises.slice(0, 6).map((e) => (
@@ -235,7 +259,7 @@ export function Home() {
                     {d.name}
                     {isNext && <span className="badge">Te toca</span>}
                   </span>
-                  <span className="ex-row-meta">{d.exercises.length ? `${d.exercises.length} ejercicios · ~${estimateMinutes(d.exercises, exMap)} min` : 'Sin ejercicios'}</span>
+                  <span className="ex-row-meta">{d.exercises.length ? `${d.exercises.length} ejercicios · ~${estimateMinutes(d.exercises, exMap, pace)} min` : 'Sin ejercicios'}</span>
                 </span>
                 <Icon name="play" size={18} />
               </button>
@@ -274,7 +298,10 @@ export function LogDetail({ log, onClose }: { log: WorkoutLog | null; onClose: (
           const ex = exMap.get(e.exerciseId);
           return (
             <li key={e.uid}>
-              <strong>{ex?.name ?? 'Ejercicio eliminado'}</strong>
+              <strong>
+                {ex?.name ?? 'Ejercicio eliminado'}
+                {e.elapsedMs ? <span className="muted"> · {fmtDuration(e.elapsedMs)}</span> : null}
+              </strong>
               <span className="muted">{e.sets.map((x) => (x.weight ? `${fmtKg(x.weight)} kg × ${x.reps}` : `${x.reps}${ex?.unit === 'seg' ? ' s' : ' reps'}`)).join(' · ')}</span>
             </li>
           );

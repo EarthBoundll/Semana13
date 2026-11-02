@@ -1,6 +1,7 @@
 import { LOWER, MUSCLE_ORDER, MUSCLES, UPPER } from '../data/meta';
 import type { Exercise, Goal, Kind, Level, Muscle, Profile, RoutineDay, RoutineExercise, SplitStyle } from '../types';
 import { uid, type ExMap } from './store';
+import { blockSec, planningBudget, WARMUP_MIN } from './timing';
 import { HIGH_TOLERANCE, targets, volumeOf } from './volume';
 
 // ─────────────────────────── Series, repeticiones y tiempo ───────────────────────────
@@ -25,15 +26,17 @@ export function scheme(goal: Goal, ex: Exercise, level: Level, setsPref: number 
   return { sets, repsMin, repsMax, rest };
 }
 
-export function estimateMinutes(list: RoutineExercise[], exMap: ExMap): number {
+/** Minutos estimados de un día (con calentamiento). `pace` = tu ritmo real (1 = normal). */
+export function estimateMinutes(list: RoutineExercise[], exMap: ExMap, pace = 1): number {
   if (!list.length) return 0;
-  let sec = 5 * 60; // calentamiento
-  for (const re of list) {
-    const ex = exMap.get(re.exerciseId);
-    const work = ex?.unit === 'seg' ? re.repsMax : Math.round(((re.repsMin + re.repsMax) / 2) * 3.5);
-    sec += re.sets * (work + re.rest) + 60;
-  }
-  return Math.round(sec / 60);
+  let sec = WARMUP_MIN * 60;
+  for (const re of list) sec += blockSec(exMap.get(re.exerciseId), re.sets, re.rest, re.repsMin, re.repsMax);
+  return Math.round((sec * pace) / 60);
+}
+
+/** Minutos estimados de un solo ejercicio */
+export function exerciseMinutes(re: RoutineExercise, exMap: ExMap, pace = 1): number {
+  return Math.max(1, Math.round((blockSec(exMap.get(re.exerciseId), re.sets, re.rest, re.repsMin, re.repsMax) * pace) / 60));
 }
 
 export function totalSets(day: RoutineDay): number {
@@ -464,6 +467,8 @@ export interface PickCtx {
   /** cuántas veces se usó cada ejercicio en otros días */
   used: Map<string, number>;
   rand: () => number;
+  /** ritmo real del usuario (1 = como lo estimado) */
+  pace: number;
 }
 
 export function makeCtx(
@@ -483,6 +488,7 @@ export function makeCtx(
     disliked: new Set(disliked),
     used,
     rand: rng(seed),
+    pace: 1,
   };
 }
 
@@ -545,7 +551,7 @@ function buildFromSlots(slots: Slot[], ctx: PickCtx, exMap: ExMap): RoutineExerc
     const ex = pickExercise(slot, ctx, ids, patterns);
     if (!ex) continue;
     const re: RoutineExercise = { uid: uid(), exerciseId: ex.id, ...scheme(profile.goal, ex, profile.level, profile.setsPref) };
-    if (out.length >= 3 && estimateMinutes([...out, re], exMap) > profile.sessionMinutes * 1.05) break;
+    if (out.length >= 3 && estimateMinutes([...out, re], exMap, ctx.pace) > planningBudget(profile)) break;
     out.push(re);
     ids.add(ex.id);
     patterns.add(ex.pattern);
@@ -579,8 +585,9 @@ function slotsForFocus(focus: Muscle[]): Slot[] {
 }
 
 /** Arma ejercicios para un día según sus músculos (botón "Rellenar con sugerencia"). */
-export function fillDay(day: RoutineDay, others: RoutineDay[], exMap: ExMap, profile: Profile, favorites: string[], disliked: string[]): RoutineExercise[] {
+export function fillDay(day: RoutineDay, others: RoutineDay[], exMap: ExMap, profile: Profile, favorites: string[], disliked: string[], pace = 1): RoutineExercise[] {
   const ctx = makeCtx(exMap, profile, favorites, disliked, others);
+  ctx.pace = pace;
   const keep = day.exercises;
   for (const e of keep) ctx.used.set(e.exerciseId, 99);
   const focus = day.focus.length ? day.focus : (['pecho', 'espalda', 'cuadriceps'] as Muscle[]);
@@ -605,6 +612,8 @@ export interface GenerateOptions {
   favorites: string[];
   disliked: string[];
   seed?: number;
+  /** ritmo real del usuario (ver paceFactor) */
+  pace?: number;
 }
 
 export interface GenerateResult {
@@ -642,6 +651,7 @@ export function generateRoutine(o: GenerateOptions): GenerateResult {
   }
 
   const ctx = makeCtx(o.exMap, o.profile, o.favorites, o.disliked, kept, o.seed ?? Date.now());
+  ctx.pace = o.pace ?? 1;
   const reusable = o.current.filter((d) => !d.mine && !d.locked).map((d) => d.id);
   const keptIds = new Set(kept.map((d) => d.id));
   const routine: RoutineDay[] = templateKeys.map((k, i) => {
@@ -721,13 +731,19 @@ function balanceRoutine(routine: RoutineDay[], editable: Set<string>, exMap: ExM
     const days = routine.filter((d) => editable.has(d.id));
     const withFocus = days.filter((d) => d.focus.includes(m));
     const day = [...(withFocus.length ? withFocus : days)].sort((a, b) => estimateMinutes(a.exercises, exMap) - estimateMinutes(b.exercises, exMap))[0];
-    if (!day || estimateMinutes(day.exercises, exMap) > profile.sessionMinutes * 1.1) continue;
+    if (!day) continue;
     const ids = new Set(day.exercises.map((e) => e.exerciseId));
     const patterns = new Set(day.exercises.map((e) => exMap.get(e.exerciseId)?.pattern ?? ''));
     const slot = MUSCLE_SLOTS[m].find((sl) => !sl.p || !sl.p.some((p) => patterns.has(p))) ?? MUSCLE_SLOTS[m][0];
     const ex = pickExercise(slot, ctx, ids, patterns);
     if (!ex) continue;
-    day.exercises.push({ uid: uid(), exerciseId: ex.id, ...scheme(profile.goal, ex, profile.level, profile.setsPref) });
+    const re = { uid: uid(), exerciseId: ex.id, ...scheme(profile.goal, ex, profile.level, profile.setsPref) };
+    // solo si cabe en tu tiempo (con 3 series como mínimo útil)
+    if (estimateMinutes([...day.exercises, re], exMap, ctx.pace) > planningBudget(profile)) {
+      re.sets = Math.min(re.sets, 2);
+      if (estimateMinutes([...day.exercises, re], exMap, ctx.pace) > planningBudget(profile)) continue;
+    }
+    day.exercises.push(re);
   }
 }
 

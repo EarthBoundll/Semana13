@@ -1,6 +1,7 @@
 import { MUSCLE_ORDER, MUSCLES } from '../data/meta';
 import type { AppState, Muscle } from '../types';
 import { estimateMinutes } from './generator';
+import { availableMinutes, fmtHHMM, hasSchedule, paceFactor, parseHHMM } from './timing';
 import type { ExMap } from './store';
 import { statusOf, targets, volumeOf } from './volume';
 
@@ -63,14 +64,18 @@ export function routineInsights(s: AppState, exMap: ExMap): Insight[] {
     });
   }
 
-  // Sesiones demasiado largas
+  // Sesiones que no caben en tu tiempo
+  const pace = paceFactor(s.logs, exMap);
+  const avail = availableMinutes(s.profile);
+  const strict = hasSchedule(s.profile);
   for (const [i, d] of s.routine.entries()) {
-    const mins = estimateMinutes(d.exercises, exMap);
-    if (mins > s.profile.sessionMinutes * 1.25) {
+    const mins = estimateMinutes(d.exercises, exMap, pace);
+    if (mins > (strict ? avail : avail * 1.25)) {
+      const end = strict ? ` (hasta las ${fmtHHMM(parseHHMM(s.profile.gymEnd) ?? 0)})` : '';
       out.push({
         id: `long-${d.id}`,
-        tone: 'info',
-        text: `El día ${String.fromCharCode(65 + i)} (${d.name}) dura ~${mins} min, más que tus ${s.profile.sessionMinutes} min. Quita un ejercicio o una serie.`,
+        tone: 'warn',
+        text: `El día ${String.fromCharCode(65 + i)} (${d.name}) dura ~${mins} min y tienes ${avail} min${end}. Usa “Ajustar a mi tiempo” en ese día.`,
       });
     }
   }

@@ -3,7 +3,8 @@ import { Icon } from '../components/Icon';
 import { Chip, PageHeader, Segmented, toast } from '../components/ui';
 import { EQUIPMENT, EQUIPMENT_ORDER, GOALS, LEVELS } from '../data/meta';
 import { todayKey } from '../lib/dates';
-import { applyTheme, getState, initialState, mutate, normalize, setState, useAppState } from '../lib/store';
+import { applyTheme, buildExMap, getState, initialState, mutate, normalize, setState, useAppState } from '../lib/store';
+import { fitRoutineDay, fmtHHMM, paceFactor, parseHHMM, planningBudget, scheduleMinutes } from '../lib/timing';
 import type { Goal, Level, Profile, Theme } from '../types';
 
 export function Settings() {
@@ -39,9 +40,76 @@ export function Settings() {
     }
   };
 
+  const sched = scheduleMinutes(p);
+  const pace = paceFactor(s.logs, buildExMap(s.customExercises));
+
+  const fitAll = () => {
+    const st = getState();
+    const exMap = buildExMap(st.customExercises);
+    const budget = planningBudget(st.profile);
+    let changed = 0;
+    mutate((d) => {
+      for (const day of d.routine) {
+        const res = fitRoutineDay(day.exercises, exMap, budget, pace);
+        if (res.changes.length) {
+          day.exercises = res.exercises;
+          changed++;
+        }
+      }
+    });
+    toast(changed ? `Ajusté ${changed} día${changed > 1 ? 's' : ''} para que quepan en ${budget} min` : `Tu rutina ya cabe en ${budget} min`);
+  };
+
   return (
     <div className="page">
       <PageHeader title="Ajustes" subtitle="Tu perfil y tus datos" />
+
+      <section className="card form-card">
+        <h3 className="card-title">
+          <Icon name="timer" size={18} /> Horario de gym
+        </h3>
+        <p className="muted small">Si tienes una hora límite, armo rutinas que quepan en ese tiempo y, al entrenar, te mido el tiempo de cada ejercicio y te aviso si te pasas.</p>
+        <div className="grid-2">
+          <label className="field">
+            <span>Llego a las</span>
+            <input type="time" value={p.gymStart ?? ''} onChange={(e) => set('gymStart', e.target.value || null)} />
+          </label>
+          <label className="field">
+            <span>Debo terminar a las</span>
+            <input type="time" value={p.gymEnd ?? ''} onChange={(e) => set('gymEnd', e.target.value || null)} />
+          </label>
+        </div>
+        {sched != null ? (
+          <>
+            <div className="callout">
+              <Icon name="info" size={18} />
+              <p>
+                De {fmtHHMM(parseHHMM(p.gymStart) ?? 0)} a {fmtHHMM(parseHHMM(p.gymEnd) ?? 0)} tienes <strong>{sched} min</strong>. Armo sesiones de máximo{' '}
+                <strong>{planningBudget(p)} min</strong> (calentamiento incluido y 5 min de margen)
+                {pace !== 1 ? `, según tu ritmo real (${pace > 1 ? 'tardas' : 'vas'} un ${Math.abs(Math.round((pace - 1) * 100))} % ${pace > 1 ? 'más' : 'más rápido'} de lo estimado)` : ''}.
+              </p>
+            </div>
+            <div className="btn-row wrap">
+              <button className="btn primary" onClick={fitAll}>
+                <Icon name="spark" size={18} /> Ajustar mi rutina a este horario
+              </button>
+              <button
+                className="btn ghost"
+                onClick={() =>
+                  mutate((st) => {
+                    st.profile.gymStart = null;
+                    st.profile.gymEnd = null;
+                  })
+                }
+              >
+                Quitar horario
+              </button>
+            </div>
+          </>
+        ) : (
+          (p.gymStart || p.gymEnd) && <p className="muted small">Completa las dos horas (al menos 15 min de diferencia).</p>
+        )}
+      </section>
 
       <section className="card form-card">
         <h3 className="card-title">
@@ -101,10 +169,12 @@ export function Settings() {
           <span>Días por semana (habitual)</span>
           <Segmented label="Días por semana" value={p.daysPerWeek} onChange={(v) => set('daysPerWeek', v)} options={[1, 2, 3, 4, 5, 6].map((n) => ({ value: n, label: String(n) }))} />
         </div>
-        <div className="field">
-          <span>Duración de cada sesión</span>
-          <Segmented label="Duración" value={p.sessionMinutes} onChange={(v) => set('sessionMinutes', v)} options={[45, 60, 75, 90].map((n) => ({ value: n, label: `${n} min` }))} />
-        </div>
+        {sched == null && (
+          <div className="field">
+            <span>Duración de cada sesión</span>
+            <Segmented label="Duración" value={p.sessionMinutes} onChange={(v) => set('sessionMinutes', v)} options={[45, 60, 75, 90].map((n) => ({ value: n, label: `${n} min` }))} />
+          </div>
+        )}
         <div className="field">
           <span>Series por ejercicio al generar</span>
           <Segmented label="Series" value={p.setsPref ?? 0} onChange={(v) => set('setsPref', v || null)} options={[0, 2, 3, 4, 5].map((n) => ({ value: n, label: n ? String(n) : 'Auto' }))} />

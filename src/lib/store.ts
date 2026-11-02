@@ -13,6 +13,8 @@ export const defaultProfile: Profile = {
   level: 'intermedio',
   equipment: [...EQUIPMENT_ORDER],
   sessionMinutes: 60,
+  gymStart: null,
+  gymEnd: null,
   daysPerWeek: 4,
   setsPref: null,
   style: 'auto',

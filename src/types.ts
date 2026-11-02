@@ -65,6 +65,10 @@ export interface Profile {
   level: Level;
   equipment: Equipment[];
   sessionMinutes: number;
+  /** Hora de llegada al gym "HH:MM" (opcional) */
+  gymStart: string | null;
+  /** Hora límite para terminar "HH:MM" (opcional) */
+  gymEnd: string | null;
   daysPerWeek: number;
   /** null = automático según objetivo */
   setsPref: number | null;
@@ -83,6 +87,11 @@ export interface LoggedExercise {
   exerciseId: string;
   target: { sets: number; repsMin: number; repsMax: number; rest: number };
   sets: LoggedSet[];
+  /** Tiempo medido en este ejercicio (ms) */
+  elapsedMs?: number;
+  /** Tiempo asignado al empezarlo (s) */
+  budgetSec?: number | null;
+  startedAt?: number | null;
 }
 
 export interface WorkoutLog {
@@ -93,6 +102,13 @@ export interface WorkoutLog {
   startedAt: number;
   finishedAt: number | null;
   exercises: LoggedExercise[];
+  /** Hora límite para terminar (ms) */
+  deadline?: number | null;
+  /** Ejercicio que se está cronometrando */
+  currentUid?: string | null;
+  currentSince?: number | null;
+  /** Avisos ya mostrados (para no repetirlos) */
+  alerts?: string[];
 }
 
 export interface WeightEntry {

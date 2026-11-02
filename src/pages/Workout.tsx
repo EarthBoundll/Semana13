@@ -5,10 +5,31 @@ import { Sheet, toast, useNow } from '../components/ui';
 import { fmtRest } from '../data/meta';
 import { fmtDate, fmtDuration } from '../lib/dates';
 import { findPRs, fmtKg, history, logSetsDone, logVolume, suggest } from '../lib/progression';
-import { mutate, useAppState, useExMap } from '../lib/store';
-import { beep, discardWorkout, finishWorkout, makeLoggedExercise, primeAudio } from '../lib/workout';
+import { getState, mutate, useAppState, useExMap } from '../lib/store';
+import { atTime, budgetFor, deadlineOf, exerciseElapsed, fmtClock, paceFactor, projection } from '../lib/timing';
+import {
+  beep,
+  discardWorkout,
+  finishWorkout,
+  fitActiveToDeadline,
+  makeLoggedExercise,
+  pauseExercise,
+  primeAudio,
+  setDeadline,
+  startExercise,
+  startExerciseIn,
+  stopCurrentIn,
+} from '../lib/workout';
 import { useNav } from '../nav';
 import type { LoggedExercise, LoggedSet } from '../types';
+
+const mmss = (ms: number) => fmtDuration(Math.abs(ms));
+
+function markAlert(id: string) {
+  mutate((s) => {
+    if (s.active) s.active.alerts = [...(s.active.alerts ?? []), id];
+  });
+}
 
 const parseNum = (t: string): number | null => {
   const v = parseFloat(t.replace(',', '.'));
@@ -55,7 +76,33 @@ export function Workout() {
   const [swapUid, setSwapUid] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [detail, setDetail] = useState<string | null>(null);
+  const [editDeadline, setEditDeadline] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
   const beeped = useRef(false);
+  const pace = useMemo(() => paceFactor(s.logs, exMap), [s.logs, exMap]);
+  const proj = projection(a, exMap, now, pace);
+  const current = a.exercises.find((e) => e.uid === a.currentUid);
+
+  // Avisos de tiempo: ejercicio pasado de su tiempo, 10 min antes y a la hora límite
+  useEffect(() => {
+    const fired = new Set(a.alerts ?? []);
+    if (current && current.budgetSec && !fired.has(`over-${current.uid}`) && exerciseElapsed(current, a, now) > current.budgetSec * 1000) {
+      const ex = exMap.get(current.exerciseId);
+      markAlert(`over-${current.uid}`);
+      beep();
+      setNotice(`Te pasaste del tiempo de «${ex?.name ?? 'este ejercicio'}». Termina la serie y pasa al siguiente.`);
+    }
+    const left = deadlineOf(a) - now;
+    if (left <= 0 && !fired.has('deadline-0')) {
+      markAlert('deadline-0');
+      beep();
+      setNotice(`Son las ${fmtClock(deadlineOf(a))}: hora de terminar e ir a ducharte.`);
+    } else if (left > 0 && left <= 10 * 60000 && !fired.has('deadline-10')) {
+      markAlert('deadline-10');
+      beep();
+      setNotice(`Quedan ${Math.ceil(left / 60000)} min para tu hora límite (${fmtClock(deadlineOf(a))}).`);
+    }
+  }, [now, a, current, exMap]);
 
   // Pantalla siempre encendida mientras entrenas
   useEffect(() => {
@@ -112,18 +159,37 @@ export function Workout() {
     primeAudio();
     const set = le.sets[i];
     const willBeDone = !set.done;
-    patchActive((exs) => {
-      const x = exs.find((e) => e.uid === le.uid);
-      if (!x) return;
-      const st = x.sets[i];
-      st.done = willBeDone;
-      if (willBeDone && st.reps == null) st.reps = placeholderReps;
-      if (willBeDone && st.weight == null && i > 0) st.weight = x.sets[i - 1].weight;
+    let finishedExercise = false;
+    mutate((st) => {
+      const act = st.active;
+      const x = act?.exercises.find((e) => e.uid === le.uid);
+      if (!act || !x) return;
+      const t = Date.now();
+      // marcar una serie de otro ejercicio empieza su cronómetro
+      if (willBeDone && act.currentUid !== x.uid) startExerciseIn(act, x.uid, t, exMap, pace);
+      const row = x.sets[i];
+      row.done = willBeDone;
+      if (willBeDone && row.reps == null) row.reps = placeholderReps;
+      if (willBeDone && row.weight == null && i > 0) row.weight = x.sets[i - 1].weight;
+      // última serie: se detiene el cronómetro del ejercicio
+      if (willBeDone && x.sets.every((r) => r.done) && act.currentUid === x.uid) {
+        stopCurrentIn(act, t);
+        finishedExercise = true;
+      }
     });
     if (willBeDone) {
       const ex = exMap.get(le.exerciseId);
       setRest({ end: Date.now() + le.target.rest * 1000, total: le.target.rest, name: ex?.name ?? '' });
       setRestNow(Date.now());
+    }
+    if (finishedExercise) {
+      const st = getState().active;
+      const done = st?.exercises.find((e) => e.uid === le.uid);
+      const next = st?.exercises.find((e) => e.sets.some((r) => !r.done));
+      const spent = done ? done.elapsedMs ?? 0 : 0;
+      const budget = (done?.budgetSec ?? 0) * 1000;
+      const verdict = budget ? (spent <= budget ? `en ${mmss(spent)}, a tiempo` : `en ${mmss(spent)}, ${mmss(spent - budget)} más de lo previsto`) : `en ${mmss(spent)}`;
+      toast(`Listo ${verdict}.${next ? ` Siguiente: ${exMap.get(next.exerciseId)?.name ?? ''}` : ''}`);
     }
   };
 
@@ -150,9 +216,19 @@ export function Workout() {
 
   const elapsed = now - a.startedAt;
   const restLeft = rest ? Math.max(0, rest.end - restNow) : 0;
+  const late = proj.slackMs < -60000;
+  const overDeadline = proj.remainingMs <= 0;
+  const timeTone = overDeadline || late ? 'late' : proj.slackMs < 3 * 60000 ? 'tight' : 'ok';
+
+  const adjust = () => {
+    const res = fitActiveToDeadline();
+    if (!res.changes.length) toast('Ya no hay nada que recortar sin perder el entrenamiento');
+    else toast(`Ajustado: ${res.changes.slice(0, 3).join(' · ')}${res.changes.length > 3 ? '…' : ''}`);
+  };
 
   return (
     <div className="workout">
+      <div className="wk-top">
       <header className="wk-head">
         <button className="icon-btn" onClick={() => go('hoy')} aria-label="Minimizar entrenamiento">
           <Icon name="down" />
@@ -170,16 +246,69 @@ export function Workout() {
       <div className="meter thin" aria-hidden="true">
         <span style={{ width: `${total ? (doneCount / total) * 100 : 0}%` }} />
       </div>
+      <div className={`time-strip ${timeTone} ${proj.remainingMs <= 10 * 60000 ? 'near' : ''}`}>
+        <div className="ts-cell">
+          <small>Ahora</small>
+          <strong>{fmtClock(now)}</strong>
+        </div>
+        <button className="ts-cell ts-edit" onClick={() => setEditDeadline(true)} aria-label="Cambiar hora límite">
+          <small>
+            Límite <Icon name="edit" size={12} />
+          </small>
+          <strong>{fmtClock(proj.deadline)}</strong>
+        </button>
+        <div className="ts-cell">
+          <small>{overDeadline ? 'Te pasaste' : 'Quedan'}</small>
+          <strong>{overDeadline ? `${Math.ceil(-proj.remainingMs / 60000)} min` : `${Math.floor(proj.remainingMs / 60000)} min`}</strong>
+        </div>
+        <div className="ts-cell">
+          <small>Terminas</small>
+          <strong>~{fmtClock(proj.end)}</strong>
+        </div>
+      </div>
+      </div>
 
       <div className="wk-body">
+        {notice && (
+          <div className={`callout ${overDeadline ? 'warn' : ''}`} role="alert">
+            <Icon name="timer" size={18} />
+            <p>{notice}</p>
+            <button className="icon-btn sm" onClick={() => setNotice(null)} aria-label="Cerrar aviso">
+              <Icon name="x" size={16} />
+            </button>
+          </div>
+        )}
+        {!overDeadline && (
+          <div className={`pace-line ${timeTone}`}>
+            <Icon name={timeTone === 'ok' ? 'check' : 'alert'} size={16} />
+            {late ? (
+              <span>
+                A este ritmo terminas a las <strong>{fmtClock(proj.end)}</strong>, {Math.round(-proj.slackMs / 60000)} min tarde.
+              </span>
+            ) : (
+              <span>
+                Vas bien: terminas ~{fmtClock(proj.end)}, con {Math.max(0, Math.round(proj.slackMs / 60000))} min de margen.
+              </span>
+            )}
+            {late && (
+              <button className="btn sm primary" onClick={adjust}>
+                <Icon name="spark" size={14} /> Ajustar a mi tiempo
+              </button>
+            )}
+          </div>
+        )}
         {a.exercises.map((le, idx) => {
           const ex = exMap.get(le.exerciseId);
           const sug = suggestions.get(le.uid);
           const past = ex ? history(s.logs, ex.id, 1)[0] : undefined;
           const seg = ex?.unit === 'seg';
           const allDone = le.sets.length > 0 && le.sets.every((x) => x.done);
+          const isCurrent = a.currentUid === le.uid;
+          const spent = exerciseElapsed(le, a, now);
+          const budgetMs = (isCurrent || allDone || spent > 0 ? le.budgetSec ?? 0 : budgetFor(le, a, exMap, now, pace)) * 1000;
+          const over = budgetMs > 0 && spent > budgetMs;
           return (
-            <section key={le.uid} className={`card wk-ex ${allDone ? 'complete' : ''}`}>
+            <section key={le.uid} className={`card wk-ex ${allDone ? 'complete' : ''} ${isCurrent ? 'current' : ''}`}>
               <div className="wk-ex-head">
                 <span className="rx-num">{idx + 1}</span>
                 <button className="rx-name" onClick={() => ex && setDetail(ex.id)}>
@@ -193,6 +322,41 @@ export function Workout() {
                   <Icon name="swap" size={16} /> Cambiar
                 </button>
               </div>
+
+              {isCurrent ? (
+                <div className={`ex-timer ${over ? 'over' : ''}`} role="timer">
+                  <Icon name="timer" size={18} />
+                  <span className="ex-timer-text">
+                    <strong>{mmss(spent)}</strong>
+                    {budgetMs > 0 && <small> de {mmss(budgetMs)}</small>}
+                    {over && <small className="over-text"> · +{mmss(spent - budgetMs)}</small>}
+                  </span>
+                  {budgetMs > 0 && (
+                    <span className="meter ex-meter" aria-hidden="true">
+                      <span style={{ width: `${Math.min(100, (spent / budgetMs) * 100)}%` }} />
+                    </span>
+                  )}
+                  <button className="btn sm ghost" onClick={pauseExercise}>
+                    Pausar
+                  </button>
+                </div>
+              ) : allDone ? (
+                <p className={`ex-done-time ${over ? 'over' : ''}`}>
+                  <Icon name="check" size={16} /> Hecho en {mmss(spent)}
+                  {budgetMs > 0 && <span className="muted"> · tiempo previsto {mmss(budgetMs)}</span>}
+                </p>
+              ) : (
+                <button
+                  className="btn secondary block start-ex"
+                  onClick={() => {
+                    primeAudio();
+                    startExercise(le.uid);
+                  }}
+                >
+                  <Icon name="play" size={16} /> {spent > 0 ? `Continuar (${mmss(spent)})` : 'Empezar ejercicio'}
+                  <span className="muted">· tienes {Math.max(1, Math.round(budgetMs / 60000))} min</span>
+                </button>
+              )}
 
               {sug && (
                 <p className={`suggest ${sug.tone}`}>
@@ -331,6 +495,34 @@ export function Workout() {
         }}
       />
       <ExerciseDetail id={detail} onClose={() => setDetail(null)} onOpen={setDetail} />
+      <Sheet
+        open={editDeadline}
+        onClose={() => setEditDeadline(false)}
+        title="¿Hasta qué hora tienes hoy?"
+        footer={
+          <button
+            className="btn primary block"
+            onClick={() => {
+              const input = document.getElementById('deadline-input') as HTMLInputElement | null;
+              if (input?.value) {
+                let ms = atTime(input.value, new Date(a.startedAt));
+                if (ms < a.startedAt) ms += 86400000;
+                setDeadline(ms);
+                toast(`Hora límite: ${fmtClock(ms)}`);
+              }
+              setEditDeadline(false);
+            }}
+          >
+            Guardar
+          </button>
+        }
+      >
+        <p className="muted">Recalculo el tiempo de cada ejercicio para que termines a esa hora.</p>
+        <label className="field">
+          <span>Terminar a las</span>
+          <input id="deadline-input" type="time" defaultValue={fmtClock(proj.deadline).padStart(5, '0')} />
+        </label>
+      </Sheet>
       <FinishSheet open={finishing} onClose={() => setFinishing(false)} onSaved={() => go('hoy')} />
     </div>
   );
@@ -394,6 +586,33 @@ function FinishSheet({ open, onClose, onSaved }: { open: boolean; onClose: () =>
           <span className="tile-value">{logVolume(preview).toLocaleString('es')} kg</span>
         </div>
       </div>
+      <p className={`pace-line ${Date.now() <= deadlineOf(a) ? 'ok' : 'late'}`}>
+        <Icon name={Date.now() <= deadlineOf(a) ? 'check' : 'alert'} size={16} />
+        <span>
+          {Date.now() <= deadlineOf(a)
+            ? `Terminas a las ${fmtClock(Date.now())}: ${Math.round((deadlineOf(a) - Date.now()) / 60000)} min antes de tu límite (${fmtClock(deadlineOf(a))}).`
+            : `Terminas a las ${fmtClock(Date.now())}: ${Math.round((Date.now() - deadlineOf(a)) / 60000)} min después de tu límite (${fmtClock(deadlineOf(a))}).`}
+        </span>
+      </p>
+      {a.exercises.some((e) => e.elapsedMs || a.currentUid === e.uid) && (
+        <ul className="time-list">
+          {a.exercises
+            .filter((e) => e.elapsedMs || a.currentUid === e.uid)
+            .map((e) => {
+              const spent = exerciseElapsed(e, a, Date.now());
+              const budget = (e.budgetSec ?? 0) * 1000;
+              return (
+                <li key={e.uid}>
+                  <span>{exMap.get(e.exerciseId)?.name}</span>
+                  <span className={budget && spent > budget ? 'late-text' : 'muted'}>
+                    {mmss(spent)}
+                    {budget ? ` / ${mmss(budget)}` : ''}
+                  </span>
+                </li>
+              );
+            })}
+        </ul>
+      )}
       {pending > 0 && <p className="muted small">Quedan {pending} series sin marcar; no se guardarán.</p>}
       {!sets && <p className="callout warn">Marca al menos una serie como hecha para poder guardar.</p>}
       {prs.length > 0 && (

@@ -4,6 +4,7 @@ import { Icon } from '../components/Icon';
 import { PageHeader, Segmented, Sheet, toast } from '../components/ui';
 import { addDays, DOW_SHORT, fmtDate, fmtDayMonth, fmtWeekRange, fromKey, todayKey, weekDays, weekStart } from '../lib/dates';
 import { estimateMinutes } from '../lib/generator';
+import { paceFactor } from '../lib/timing';
 import { applyWeekPlan, dayById, nextDayIdFor, suggestWeekDates, weekStats, weekWarnings } from '../lib/plan';
 import { mutate, useAppState, useExMap } from '../lib/store';
 import { startWorkout } from '../lib/workout';
@@ -143,7 +144,7 @@ export function Week() {
                       </select>
                     </div>
                     {status === 'missed' && <span className="status-pill bad">No fuiste</span>}
-                    {day && !past && <small className="muted">{day.exercises.length} ejercicios · ~{estimateMinutes(day.exercises, exMap)} min</small>}
+                    {day && !past && <small className="muted">{day.exercises.length} ejercicios · ~{estimateMinutes(day.exercises, exMap, paceFactor(s.logs, exMap))} min</small>}
                     {status === 'today' && day && day.exercises.length > 0 && !s.active && (
                       <button
                         className="btn primary sm start-btn"

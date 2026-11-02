@@ -1,8 +1,9 @@
-import type { AppState, Exercise, LoggedExercise } from '../types';
+import type { AppState, Exercise, LoggedExercise, WorkoutLog } from '../types';
 import { addDays, todayKey, weekStart } from './dates';
 import { assignRotation } from './plan';
 import { suggest } from './progression';
-import { buildExMap, mutate, uid } from './store';
+import { buildExMap, mutate, uid, type ExMap } from './store';
+import { budgetFor, deadlineFor, deadlineOf, fitPlan, paceFactor, remainingSec, type FitItem } from './timing';
 
 export function makeLoggedExercise(ex: Exercise, target: LoggedExercise['target'], logs: AppState['logs']): LoggedExercise {
   const sug = suggest(ex, target, logs);
@@ -19,13 +20,18 @@ export function startWorkout(dayId: string, date = todayKey()) {
     const day = s.routine.find((d) => d.id === dayId);
     if (!day) return;
     const exMap = buildExMap(s.customExercises);
+    const now = Date.now();
     s.active = {
       id: uid(),
       date,
       dayId,
       dayName: day.name,
-      startedAt: Date.now(),
+      startedAt: now,
       finishedAt: null,
+      deadline: deadlineFor(s.profile, now),
+      currentUid: null,
+      currentSince: null,
+      alerts: [],
       exercises: day.exercises.flatMap((re) => {
         const ex = exMap.get(re.exerciseId);
         return ex ? [makeLoggedExercise(ex, { sets: re.sets, repsMin: re.repsMin, repsMax: re.repsMax, rest: re.rest }, s.logs)] : [];
@@ -34,10 +40,112 @@ export function startWorkout(dayId: string, date = todayKey()) {
   });
 }
 
+// ─────────────────────────── Cronómetro por ejercicio ───────────────────────────
+
+/** Detiene el cronómetro del ejercicio actual y suma su tiempo */
+export function stopCurrentIn(a: WorkoutLog, now: number) {
+  if (a.currentUid && a.currentSince) {
+    const cur = a.exercises.find((e) => e.uid === a.currentUid);
+    if (cur) cur.elapsedMs = (cur.elapsedMs ?? 0) + (now - a.currentSince);
+  }
+  a.currentUid = null;
+  a.currentSince = null;
+}
+
+/** Empieza a cronometrar un ejercicio y le asigna su tiempo según lo que queda */
+export function startExerciseIn(a: WorkoutLog, exUid: string, now: number, exMap: ExMap, pace: number) {
+  if (a.currentUid === exUid) return;
+  stopCurrentIn(a, now);
+  const le = a.exercises.find((e) => e.uid === exUid);
+  if (!le) return;
+  le.budgetSec = budgetFor(le, a, exMap, now, pace);
+  le.startedAt ??= now;
+  a.currentUid = exUid;
+  a.currentSince = now;
+}
+
+export function startExercise(exUid: string) {
+  mutate((s) => {
+    if (!s.active) return;
+    const exMap = buildExMap(s.customExercises);
+    startExerciseIn(s.active, exUid, Date.now(), exMap, paceFactor(s.logs, exMap));
+  });
+}
+
+export function pauseExercise() {
+  mutate((s) => {
+    if (s.active) stopCurrentIn(s.active, Date.now());
+  });
+}
+
+export function setDeadline(ms: number) {
+  mutate((s) => {
+    if (s.active) {
+      s.active.deadline = ms;
+      s.active.alerts = (s.active.alerts ?? []).filter((x) => !x.startsWith('deadline'));
+    }
+  });
+}
+
+/**
+ * Recorta lo que falta del entrenamiento para terminar a tiempo.
+ * Devuelve la lista de cambios hechos.
+ */
+export function fitActiveToDeadline(): { changes: string[]; fits: boolean } {
+  let result = { changes: [] as string[], fits: true };
+  mutate((s) => {
+    const a = s.active;
+    if (!a) return;
+    const exMap = buildExMap(s.customExercises);
+    const pace = paceFactor(s.logs, exMap);
+    const now = Date.now();
+    const items: FitItem[] = [];
+    for (const le of a.exercises) {
+      const left = le.sets.filter((x) => !x.done).length;
+      if (!left) continue;
+      const ex = exMap.get(le.exerciseId);
+      const started = le.sets.some((x) => x.done) || le.uid === a.currentUid;
+      items.push({
+        key: le.uid,
+        name: ex?.name ?? 'Ejercicio',
+        ex,
+        sets: left,
+        minSets: started ? 1 : 0,
+        rest: le.target.rest,
+        repsMin: le.target.repsMin,
+        repsMax: le.target.repsMax,
+        removable: !started,
+      });
+    }
+    const target = (deadlineOf(a) - now) / 1000;
+    const res = fitPlan(items, target, pace);
+    for (const it of res.items) {
+      const le = a.exercises.find((e) => e.uid === it.key);
+      if (!le) continue;
+      le.target.rest = it.rest;
+      let left = le.sets.filter((x) => !x.done).length;
+      while (left > it.sets) {
+        const idx = le.sets.map((x) => x.done).lastIndexOf(false);
+        if (idx < 0) break;
+        le.sets.splice(idx, 1);
+        left--;
+      }
+    }
+    a.exercises = a.exercises.filter((e) => e.sets.length > 0);
+    result = { changes: res.changes, fits: res.fits };
+  });
+  return result;
+}
+
+export function remainingWorkSec(a: WorkoutLog, exMap: ExMap): number {
+  return a.exercises.reduce((n, le) => n + remainingSec(le, exMap.get(le.exerciseId)), 0);
+}
+
 export function finishWorkout() {
   mutate((s) => {
     const a = s.active;
     if (!a) return;
+    stopCurrentIn(a, Date.now());
     a.finishedAt = Date.now();
     a.exercises = a.exercises.map((e) => ({ ...e, sets: e.sets.filter((x) => x.done) })).filter((e) => e.sets.length);
     s.active = null;

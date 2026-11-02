@@ -6,6 +6,7 @@ import { todayKey, weekStart } from '../lib/dates';
 import { dayNameFromFocus, generateRoutine } from '../lib/generator';
 import { applyWeekPlan, suggestWeekDates } from '../lib/plan';
 import { buildExMap, defaultProfile, mutate, uid } from '../lib/store';
+import { planningBudget, scheduleMinutes } from '../lib/timing';
 import type { Equipment, Goal, Level, Muscle, Profile, RoutineDay } from '../types';
 
 export function Onboarding({ onDone }: { onDone: (hasOwnDay: boolean) => void }) {
@@ -92,9 +93,29 @@ export function Onboarding({ onDone }: { onDone: (hasOwnDay: boolean) => void })
             <small className="muted">Cada semana podrás elegir qué días vas exactamente.</small>
           </div>
           <div className="field">
-            <span>¿Cuánto dura cada sesión?</span>
-            <Segmented label="Duración" value={p.sessionMinutes} onChange={(v) => set('sessionMinutes', v)} options={[45, 60, 75, 90].map((n) => ({ value: n, label: `${n} min` }))} />
+            <span>¿Tienes una hora límite? (opcional)</span>
+            <div className="grid-2">
+              <label className="field">
+                <span>Llego a las</span>
+                <input type="time" value={p.gymStart ?? ''} onChange={(e) => set('gymStart', e.target.value || null)} />
+              </label>
+              <label className="field">
+                <span>Debo terminar a las</span>
+                <input type="time" value={p.gymEnd ?? ''} onChange={(e) => set('gymEnd', e.target.value || null)} />
+              </label>
+            </div>
+            {scheduleMinutes(p) != null && (
+              <small className="muted">
+                Tienes {scheduleMinutes(p)} min: armo sesiones de máximo {planningBudget(p)} min y al entrenar te mido el tiempo de cada ejercicio.
+              </small>
+            )}
           </div>
+          {scheduleMinutes(p) == null && (
+            <div className="field">
+              <span>¿Cuánto dura cada sesión?</span>
+              <Segmented label="Duración" value={p.sessionMinutes} onChange={(v) => set('sessionMinutes', v)} options={[45, 60, 75, 90].map((n) => ({ value: n, label: `${n} min` }))} />
+            </div>
+          )}
           <div className="field">
             <span>Series por ejercicio</span>
             <Segmented

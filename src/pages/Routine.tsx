@@ -6,7 +6,8 @@ import { Chip, Empty, PageHeader, Segmented, Sheet, Stepper, toast } from '../co
 import { fmtRest, MUSCLE_ORDER, MUSCLES, REST_OPTIONS, STYLES } from '../data/meta';
 import { routineInsights, statusOf, targets, weeklyVolume } from '../lib/analysis';
 import { todayKey } from '../lib/dates';
-import { bestForMuscle, dayNameFromFocus, detectStyle, estimateMinutes, fillDay, generateRoutine, mainMuscles, scheme, suggestionsForDay, totalSets } from '../lib/generator';
+import { bestForMuscle, dayNameFromFocus, detectStyle, estimateMinutes, exerciseMinutes, fillDay, generateRoutine, mainMuscles, scheme, suggestionsForDay, totalSets } from '../lib/generator';
+import { fitRoutineDay, fmtHHMM, paceFactor, parseHHMM, planningBudget, scheduleMinutes } from '../lib/timing';
 import { assignRotation } from '../lib/plan';
 import { getState, mutate, uid, useAppState, useExMap } from '../lib/store';
 import type { Muscle, RoutineDay, RoutineExercise, SplitStyle } from '../types';
@@ -53,7 +54,10 @@ export function Routine() {
   }, [s.routine.length, sel]);
 
   const day = s.routine[sel] as RoutineDay | undefined;
-  const mins = s.routine.map((d) => estimateMinutes(d.exercises, exMap)).filter(Boolean);
+  const pace = useMemo(() => paceFactor(s.logs, exMap), [s.logs, exMap]);
+  const budget = planningBudget(s.profile);
+  const sched = scheduleMinutes(s.profile);
+  const mins = s.routine.map((d) => estimateMinutes(d.exercises, exMap, pace)).filter(Boolean);
   const avg = mins.length ? Math.round(mins.reduce((a, b) => a + b, 0) / mins.length) : 0;
 
   const suggestions = useMemo(() => (day ? suggestionsForDay(day, exMap, s.profile, s.favorites, s.disliked) : []), [day, exMap, s.profile, s.favorites, s.disliked]);
@@ -110,7 +114,16 @@ export function Routine() {
 
   return (
     <div className="page">
-      <PageHeader title="Mi rutina" subtitle={s.routine.length ? `${s.routine.length} días · ~${avg} min por sesión` : 'Aún no tienes rutina'} />
+      <PageHeader
+        title="Mi rutina"
+        subtitle={
+          s.routine.length
+            ? sched != null
+              ? `${s.routine.length} días · ${fmtHHMM(parseHHMM(s.profile.gymStart) ?? 0)}–${fmtHHMM(parseHHMM(s.profile.gymEnd) ?? 0)} · sesiones de máx. ${budget} min`
+              : `${s.routine.length} días · ~${avg} min por sesión`
+            : 'Aún no tienes rutina'
+        }
+      />
 
       <div className="btn-row wrap">
         <button className="btn primary" onClick={() => setRegenOpen(true)}>
@@ -165,9 +178,28 @@ export function Routine() {
               </h2>
             )}
             <p className="muted small">
-              {day.exercises.length} ejercicios · {totalSets(day)} series · ~{estimateMinutes(day.exercises, exMap)} min
+              {day.exercises.length} ejercicios · {totalSets(day)} series · ~{estimateMinutes(day.exercises, exMap, pace)} de {budget} min
               {day.mine && ' · Tu día propio'}
             </p>
+            {estimateMinutes(day.exercises, exMap, pace) > budget && (
+              <div className="callout warn">
+                <Icon name="timer" size={18} />
+                <p>
+                  Este día dura ~{estimateMinutes(day.exercises, exMap, pace)} min y tienes {budget}
+                  {sched != null ? ` (para terminar a las ${fmtHHMM(parseHHMM(s.profile.gymEnd) ?? 0)})` : ''}.
+                </p>
+                <button
+                  className="btn sm primary"
+                  onClick={() => {
+                    const res = fitRoutineDay(day.exercises, exMap, budget, pace);
+                    updateDay(day.id, (d) => (d.exercises = res.exercises));
+                    toast(res.changes.length ? `Ajustado: ${res.changes.slice(0, 3).join(' · ')}${res.changes.length > 3 ? '…' : ''}` : 'Ya cabe en tu tiempo');
+                  }}
+                >
+                  <Icon name="spark" size={14} /> Ajustar a mi tiempo
+                </button>
+              </div>
+            )}
             <div className="chips">
               {mainMuscles(day, exMap).map((m) => (
                 <span key={m} className="tag">
@@ -222,7 +254,7 @@ export function Routine() {
                   className="btn secondary"
                   onClick={() => {
                     const st = getState();
-                    const list = fillDay(day, st.routine.filter((d) => d.id !== day.id), exMap, st.profile, st.favorites, st.disliked);
+                    const list = fillDay(day, st.routine.filter((d) => d.id !== day.id), exMap, st.profile, st.favorites, st.disliked, pace);
                     updateDay(day.id, (d) => (d.exercises = list));
                   }}
                 >
@@ -241,7 +273,11 @@ export function Routine() {
                       <span className="rx-num">{i + 1}</span>
                       <button className="rx-name" onClick={() => ex && setDetail(ex.id)}>
                         <strong>{ex?.name ?? 'Ejercicio eliminado'}</strong>
-                        {ex && <small className="muted">{exMeta(ex)}</small>}
+                        {ex && (
+                          <small className="muted">
+                            {exMeta(ex)} · ≈ {exerciseMinutes(re, exMap, pace)} min
+                          </small>
+                        )}
                       </button>
                       <div className="rx-move">
                         <button
@@ -419,7 +455,7 @@ function RegenerateSheet({ open, onClose, onDone }: { open: boolean; onClose: ()
 
   const run = () => {
     const profile = { ...s.profile, daysPerWeek: days, style, sessionMinutes: mins, setsPref: setsPref || null };
-    const res = generateRoutine({ days, style, current: s.routine, exMap, profile, favorites: s.favorites, disliked: s.disliked, seed: Date.now() });
+    const res = generateRoutine({ days, style, current: s.routine, exMap, profile, favorites: s.favorites, disliked: s.disliked, seed: Date.now(), pace: paceFactor(s.logs, exMap) });
     mutate((st) => {
       st.profile = profile;
       st.routine = res.routine;
@@ -458,7 +494,13 @@ function RegenerateSheet({ open, onClose, onDone }: { open: boolean; onClose: ()
       </div>
       <div className="field">
         <span>Duración por sesión</span>
-        <Segmented label="Duración" value={mins} onChange={setMins} options={[45, 60, 75, 90].map((n) => ({ value: n, label: `${n} min` }))} />
+        {scheduleMinutes(s.profile) != null ? (
+          <p className="muted small">
+            Según tu horario ({fmtHHMM(parseHHMM(s.profile.gymStart) ?? 0)} a {fmtHHMM(parseHHMM(s.profile.gymEnd) ?? 0)}): sesiones de máximo {planningBudget(s.profile)} min. Cámbialo en Ajustes.
+          </p>
+        ) : (
+          <Segmented label="Duración" value={mins} onChange={setMins} options={[45, 60, 75, 90].map((n) => ({ value: n, label: `${n} min` }))} />
+        )}
       </div>
       <div className="field">
         <span>Series por ejercicio</span>
